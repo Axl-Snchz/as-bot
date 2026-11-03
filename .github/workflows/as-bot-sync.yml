@@ -93,8 +93,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
           git remote add upstream "https://github.com/$UPSTREAM_REPO.git"
-          git fetch --no-tags upstream "refs/tags/$TAG:refs/tags/$TAG"
-          if git merge --no-edit -m "Merge official OpenBot $TAG into $WORK_BRANCH" "$TAG"; then
+          # The fork's own release tags have the same names, so the official tag gets its own ref.
+          git fetch --no-tags upstream "+refs/tags/$TAG:refs/upstream-tags/$TAG"
+          if git merge --no-edit -m "Merge official OpenBot $TAG into $WORK_BRANCH" "refs/upstream-tags/$TAG"; then
             echo "conflict=false" >> "$GITHUB_OUTPUT"
           else
             git diff --name-only --diff-filter=U > "$RUNNER_TEMP/conflicts.txt"
