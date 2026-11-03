@@ -1,0 +1,250 @@
+# AS Bot: keeps the as-bot branch of Axl-Snchz/as-bot on the latest official OpenBot release,
+# keeps the AS Bot changes, and publishes an unsigned Windows build that electron-updater can use.
+# This file exists only in the fork. Upstream never has it, so a merge never conflicts on it.
+name: AS Bot sync
+
+on:
+  schedule:
+    - cron: "23 7 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Build and publish even when the fork already has the latest official version.
+        type: boolean
+        default: false
+
+concurrency:
+  group: as-bot-sync
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: nightly-labs/openbot
+  WORK_BRANCH: as-bot
+
+jobs:
+  sync:
+    name: Merge the latest official release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: write # disable the workflows inherited from upstream
+      contents: write # push as-bot
+      issues: write # report a conflict
+    outputs:
+      release: ${{ steps.versions.outputs.release }}
+      tag: ${{ steps.versions.outputs.tag }}
+      sha: ${{ steps.push.outputs.sha }}
+    steps:
+      # The upstream workflow files stay unchanged so that merges do not conflict. They are disabled
+      # through the API instead, and this step also disables new ones that a merge brings in.
+      - name: Disable inherited workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows" \
+            -q '.workflows[] | select(.state == "active") | select(.path != ".github/workflows/as-bot-sync.yml") | "\(.id) \(.path)"' |
+          while read -r id path; do
+            echo "Disable $path"
+            gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/$id/disable"
+          done
+
+      - name: Compare official and fork versions
+        id: versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force || false }}
+        run: |
+          upstream_tag=$(gh release view --repo "$UPSTREAM_REPO" --json tagName -q .tagName)
+          fork_tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName 2>/dev/null || true)
+          if ! [[ "$upstream_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Unexpected official tag: '$upstream_tag'"
+            exit 1
+          fi
+          echo "Official: $upstream_tag"
+          echo "AS Bot:   ${fork_tag:-none}"
+          release=false
+          if [ -z "$fork_tag" ]; then
+            release=true
+          elif [ "$upstream_tag" != "$fork_tag" ]; then
+            newest=$(printf '%s\n%s\n' "${upstream_tag#v}" "${fork_tag#v}" | sort -V | tail -n 1)
+            [ "$newest" = "${upstream_tag#v}" ] && release=true
+          fi
+          [ "$FORCE" = "true" ] && release=true
+          echo "Release: $release"
+          echo "tag=$upstream_tag" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+
+      # AS_BOT_SYNC_TOKEN is optional: a fine-grained token with Contents and Workflows write access.
+      # GITHUB_TOKEN cannot push commits that change .github/workflows, and upstream often changes them.
+      - name: Check out as-bot
+        if: steps.versions.outputs.release == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.WORK_BRANCH }}
+          fetch-depth: 0
+          token: ${{ secrets.AS_BOT_SYNC_TOKEN || github.token }}
+
+      - name: Merge official tag
+        id: merge
+        if: steps.versions.outputs.release == 'true'
+        env:
+          TAG: ${{ steps.versions.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream "https://github.com/$UPSTREAM_REPO.git"
+          git fetch --no-tags upstream "refs/tags/$TAG:refs/tags/$TAG"
+          if git merge --no-edit -m "Merge official OpenBot $TAG into $WORK_BRANCH" "$TAG"; then
+            echo "conflict=false" >> "$GITHUB_OUTPUT"
+          else
+            git diff --name-only --diff-filter=U > "$RUNNER_TEMP/conflicts.txt"
+            git merge --abort
+            echo "conflict=true" >> "$GITHUB_OUTPUT"
+            echo "::error::Merge of $TAG has conflicts:"
+            cat "$RUNNER_TEMP/conflicts.txt"
+          fi
+
+      - name: Open conflict issue
+        if: steps.merge.outputs.conflict == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.versions.outputs.tag }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="AS Bot sync: conflicto al fusionar $TAG"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number -q '.[0].number')
+          {
+            echo "La sincronización automática se detuvo **sin hacer push**: el merge de \`$TAG\` (oficial) en \`$WORK_BRANCH\` tiene conflictos."
+            echo
+            echo "### Archivos en conflicto"
+            sed 's/^/- `/; s/$/`/' "$RUNNER_TEMP/conflicts.txt"
+            echo
+            echo "### Cómo resolverlo"
+            echo '```powershell'
+            echo "cd C:\\AS_Repos\\openbot"
+            echo "git switch $WORK_BRANCH; git pull origin $WORK_BRANCH"
+            echo "git fetch upstream tag $TAG --no-tags"
+            echo "git merge $TAG    # resolver, git add, git commit"
+            echo "git push origin $WORK_BRANCH"
+            echo '```'
+            echo "Después, relanza **AS Bot sync** desde la pestaña Actions."
+            echo
+            echo "Ejecución: $RUN_URL"
+          } > "$RUNNER_TEMP/issue.md"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/issue.md"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$RUNNER_TEMP/issue.md"
+          fi
+          exit 1
+
+      - name: Push as-bot
+        id: push
+        if: steps.merge.outputs.conflict == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.versions.outputs.tag }}
+          HAS_SYNC_TOKEN: ${{ secrets.AS_BOT_SYNC_TOKEN != '' }}
+        run: |
+          if ! git push origin "HEAD:$WORK_BRANCH" 2> "$RUNNER_TEMP/push.log"; then
+            cat "$RUNNER_TEMP/push.log"
+            {
+              echo "El merge de \`$TAG\` no tuvo conflictos, pero el push a \`$WORK_BRANCH\` falló. No se publicó nada."
+              echo
+              echo '```'
+              cat "$RUNNER_TEMP/push.log"
+              echo '```'
+              if grep -qi "workflow" "$RUNNER_TEMP/push.log"; then
+                echo "Causa probable: la versión oficial cambia archivos de \`.github/workflows/\` y \`GITHUB_TOKEN\` no puede hacer push de esos cambios."
+                echo "Solución: crea un token fine-grained solo para \`Axl-Snchz/as-bot\` con permisos *Contents: Read and write* y *Workflows: Read and write*, guárdalo como secreto \`AS_BOT_SYNC_TOKEN\` (Settings → Secrets and variables → Actions) y relanza el workflow."
+                echo "(AS_BOT_SYNC_TOKEN configurado: $HAS_SYNC_TOKEN)"
+              fi
+              echo
+              echo "Ejecución: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            } > "$RUNNER_TEMP/issue.md"
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "AS Bot sync: push falló para $TAG" --body-file "$RUNNER_TEMP/issue.md"
+            exit 1
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build and publish Windows release
+    needs: sync
+    if: needs.sync.outputs.release == 'true' && needs.sync.outputs.sha != ''
+    runs-on: windows-latest
+    timeout-minutes: 75
+    permissions:
+      contents: write # create the release
+    env:
+      TAG: ${{ needs.sync.outputs.tag }}
+      SHA: ${{ needs.sync.outputs.sha }}
+      # Unsigned build: no certificate is searched for or used.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      # The runtime downloads use the GitHub API; without a token the runner can hit the rate limit.
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out merged as-bot
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.sync.outputs.sha }}
+          persist-credentials: false
+
+      - name: Set up Bun 1.4.2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # The official Windows release job installs these before dist:win; the AS Bot build does the same.
+      - name: Install provider runtimes
+        run: |
+          bun scripts/install-codex-runtime.ts win32 x64
+          bun scripts/install-claude-runtime.ts win32 x64
+          bun scripts/install-grok-runtime.ts win32 x64
+
+      - name: Build NSIS installer
+        shell: pwsh
+        run: |
+          bun run dist:win
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # electron-updater downloads the names that latest.yml gives. A file name with spaces
+      # ("AS Bot-...") would be renamed by GitHub, so the files are copied to those names first.
+      - name: Prepare update assets
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $latest = Get-Content dist/latest.yml -Raw
+          if ($latest -notmatch "(?m)^version:\s*(\S+)") { throw "latest.yml has no version." }
+          $version = $Matches[1]
+          if ("v$version" -ne $env:TAG) { Write-Warning "Built version $version differs from tag $env:TAG." }
+          if ($latest -notmatch "(?m)^path:\s*(\S+)") { throw "latest.yml has no path." }
+          $assetName = $Matches[1]
+          $installers = @(Get-ChildItem -Path dist -File -Filter *.exe)
+          if ($installers.Count -ne 1) { throw "Expected one EXE installer, found $($installers.Count)." }
+          $blockmap = "$($installers[0].FullName).blockmap"
+          if (-not (Test-Path -LiteralPath $blockmap)) { throw "Missing blockmap: $blockmap" }
+          New-Item -ItemType Directory -Force dist/release | Out-Null
+          Copy-Item -LiteralPath $installers[0].FullName -Destination "dist/release/$assetName"
+          Copy-Item -LiteralPath $blockmap -Destination "dist/release/$assetName.blockmap"
+          Copy-Item dist/latest.yml dist/release/latest.yml
+          Get-ChildItem dist/release | Format-Table Name, Length
+
+      - name: Publish release
+        shell: bash
+        run: |
+          notes="AS Bot basado en OpenBot oficial [$TAG](https://github.com/$UPSTREAM_REPO/releases/tag/$TAG). Build sin firma para Windows x64."
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$TAG" dist/release/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" dist/release/* --repo "$GITHUB_REPOSITORY" \
+              --target "$SHA" --title "AS Bot $TAG" --notes "$notes" --latest
+          fi

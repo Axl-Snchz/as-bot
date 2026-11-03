@@ -1,5 +1,5 @@
-appId: app.openbot.desktop
-productName: OpenBot
+appId: com.asbot.desktop
+productName: AS Bot
 copyright: Copyright © 2026 Synthetify Labs spółka z ograniczoną odpowiedzialnością
 protocols:
   - name: OpenBot invitations
@@ -20,8 +20,8 @@ electronFuses:
   grantFileProtocolExtraPrivileges: false
 publish:
   provider: github
-  owner: nightly-labs
-  repo: openbot
+  owner: Axl-Snchz
+  repo: as-bot
 files:
   - out/**/*
   - package.json
