@@ -74,6 +74,7 @@ export const messages = {
   "app.githubStar.thanksBody": "Nos has alegrado el día.",
   "app.rail.usageRings": "Uso de {name}: {windows}. Abrir uso",
   "app.rail.customAgentUsage": "Uso de {name}. Abrir uso",
+  "app.rail.customAgentNoUsage": "Sin datos de uso",
   "app.settingsPage.title": "Ajustes",
   "app.settingsPage.search": "Buscar ajustes",
   "app.settingsPage.searchPlaceholder": "Buscar ajustes…",

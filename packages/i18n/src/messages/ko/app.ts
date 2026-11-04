@@ -72,6 +72,7 @@ export const messages = {
   "app.githubStar.thanksTitle": "감사합니다!",
   "app.githubStar.thanksBody": "덕분에 정말 기쁜 하루예요.",
   "app.rail.usageRings": "{name} 사용량: {windows}. 사용량 열기",
+  "app.rail.customAgentNoUsage": "사용 데이터 없음",
   "app.settingsPage.title": "설정",
   "app.settingsPage.search": "설정 검색",
   "app.settingsPage.searchPlaceholder": "설정 검색…",

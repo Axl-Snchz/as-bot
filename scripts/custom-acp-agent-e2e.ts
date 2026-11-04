@@ -20,6 +20,8 @@ import { installFakeAgent, readJsonl, runTurn, startThread, stopClients, xorCiph
 
 const OUT = resolve(import.meta.dirname, "../.openbot-build/custom-acp-agent-e2e");
 const SECRET = "sk-e2e-agent-secret";
+const IS_WINDOWS = process.platform === "win32";
+const CUSTOM_ACP_FAKE_AGENT = resolve(import.meta.dirname, "provider-fakes/agents/custom-acp.ts");
 // A routed thread id is `<agent>:<folder tag>:<session>`; the folder tag is 12 hex digits.
 const ROUTED_THREAD = (agent: string) => new RegExp(`^${agent}:[0-9a-f]{12}:s-\\d+$`);
 
@@ -71,6 +73,8 @@ async function reply(client: AgentClient, thread: string, model: string, text: s
 
 try {
   const executable = join(root, "bin", "fake-acp-agent");
+  const command = IS_WINDOWS ? process.execPath : executable;
+  const withCommandPrefix = (...args: string[]) => (IS_WINDOWS ? [CUSTOM_ACP_FAKE_AGENT, ...args] : args);
   const workspace = join(root, "workspace");
   const alphaLog = join(root, "alpha.jsonl");
   const betaLog = join(root, "beta.jsonl");
@@ -84,8 +88,8 @@ try {
     store.save({
       id: "alpha",
       name: "Alpha",
-      command: executable,
-      args: ["--acp"],
+      command,
+      args: withCommandPrefix("--acp"),
       env: [
         { name: "FAKE_LOG", value: alphaLog },
         { name: "FAKE_TITLE", value: "Alpha" },
@@ -99,8 +103,8 @@ try {
     store.save({
       id: "beta",
       name: "Beta",
-      command: executable,
-      args: [],
+      command,
+      args: withCommandPrefix(),
       env: [
         { name: "FAKE_LOG", value: betaLog },
         { name: "FAKE_TITLE", value: "Beta" },
@@ -130,8 +134,8 @@ try {
   const checkLog = join(root, "check.jsonl");
   const check = await runCauseEffect(
     checkAcpAgent({
-      executable,
-      args: ["--acp"],
+      executable: command,
+      args: withCommandPrefix("--acp"),
       env: { FAKE_LOG: checkLog, FAKE_TITLE: "Alpha", FAKE_TOKEN: SECRET },
     }),
   );
@@ -146,8 +150,8 @@ try {
   assert.equal(isRunning(checkPid), false, "Check agent stops the process.");
   const crash = await runCauseEffect(
     checkAcpAgent({
-      executable,
-      args: [],
+      executable: command,
+      args: withCommandPrefix(),
       env: { FAKE_LOG: checkLog, FAKE_CRASH: "1", FAKE_TOKEN: SECRET },
       timeoutMs: 5_000,
     }),
@@ -163,8 +167,8 @@ try {
   const modelsLog = join(root, "check-models.jsonl");
   const listed = await runCauseEffect(
     checkAcpAgent({
-      executable,
-      args: ["--acp"],
+      executable: command,
+      args: withCommandPrefix("--acp"),
       env: { FAKE_LOG: modelsLog, FAKE_TITLE: "Alpha", FAKE_MODELS: "1", FAKE_TOKEN: SECRET },
       listModels: true,
     }),
@@ -176,8 +180,8 @@ try {
   assert.equal(isRunning(modelsEntries[0]?.pid ?? 0), false, "Check agent stops the process after the models.");
   const signIn = await runCauseEffect(
     checkAcpAgent({
-      executable,
-      args: ["--acp"],
+      executable: command,
+      args: withCommandPrefix("--acp"),
       env: { FAKE_LOG: modelsLog, FAKE_TITLE: "Alpha", FAKE_SIGN_IN: "1", FAKE_TOKEN: SECRET },
       listModels: true,
     }),

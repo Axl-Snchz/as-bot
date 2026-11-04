@@ -138,16 +138,17 @@ function UsageRings(props: {
   );
 }
 
-/** The answer of one custom agent to its usage prompt. OpenBot cannot read a percent from it. */
+/** One saved custom agent row for rail usage. OpenBot cannot read a percent from its usage answer. */
 export interface CustomAgentUsageRailRow {
   id: string;
   name: string;
-  text: string;
+  /** The last answer to the usage prompt. Missing when there is no prompt or no answer yet. */
+  usageText?: string | undefined;
 }
 
 /**
- * The plan usage of one custom agent: the agent logo, with no ring. The hover card shows the answer
- * as the agent wrote it.
+ * One saved custom agent in the rail: neutral ACP logo, with no ring. The hover card shows either the
+ * last answer as written by the agent, or "No usage data" while no answer exists.
  */
 function CustomAgentUsageButton(props: { row: CustomAgentUsageRailRow; onOpen: (button: HTMLElement) => void }) {
   const { t } = useText();
@@ -157,7 +158,7 @@ function CustomAgentUsageButton(props: { row: CustomAgentUsageRailRow; onOpen: (
       card={() => (
         <div class="window-rail-agent-usage">
           <h2 class="account-usage-popover-title">{props.row.name}</h2>
-          <p class="window-rail-agent-usage-text">{props.row.text}</p>
+          <p class="window-rail-agent-usage-text">{props.row.usageText ?? t("app.rail.customAgentNoUsage")}</p>
         </div>
       )}
       class="window-rail-usage"
@@ -198,7 +199,7 @@ export interface PageRailProps {
   onPinChange: (page: PageRailPinnablePage, pinned: boolean) => void;
   /** The plan limits of each provider account. Each one with a reported window shows as rings. */
   usageRows: readonly AccountUsageProviderRow[];
-  /** The answers of the custom agents on this computer that have a usage prompt. Absent on the web. */
+  /** The custom agents on this computer, with their last usage answer when one is available. Absent on the web. */
   customAgentUsage?: readonly CustomAgentUsageRailRow[] | undefined;
   onAgents: () => void;
   /** Absent when the server has no routines. */

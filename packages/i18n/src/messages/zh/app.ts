@@ -76,6 +76,7 @@ export const messages = {
   "app.githubStar.thanksBody": "你让我们今天很开心。",
   "app.rail.usageRings": "{name} 用量：{windows}。打开用量",
   "app.rail.customAgentUsage": "{name} 用量。打开用量",
+  "app.rail.customAgentNoUsage": "无使用数据",
   "app.settingsPage.title": "设置",
   "app.settingsPage.search": "搜索设置",
   "app.settingsPage.searchPlaceholder": "搜索设置…",

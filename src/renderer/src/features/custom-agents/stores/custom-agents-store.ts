@@ -9,6 +9,7 @@ import type {
 } from "@openbot/contracts/ipc";
 import { currentText } from "@openbot/ui/text";
 import { createStore } from "solid-js";
+import { type CustomAgentUsageRow, customAgentRailRows } from "../custom-agent-rail-rows";
 
 interface CustomAgentsState {
   agents: CustomAgentSummary[];
@@ -16,13 +17,6 @@ interface CustomAgentsState {
   loaded: boolean;
   /** The last answers to the usage prompts. An agent with no answer is not listed. */
   usage: CustomAgentUsage[];
-}
-
-/** The answer of one agent to its usage prompt, with the name that the rail shows. */
-export interface CustomAgentUsageRow {
-  id: string;
-  name: string;
-  text: string;
 }
 
 /**
@@ -56,12 +50,9 @@ export function createCustomAgentsStore(api: () => CustomAgentsDesktopApi | unde
     apply(await group.list());
   }
 
-  /** The agents that the user gave a usage prompt and that answered, in the order of the list. */
+  /** All saved agents for the rail, in list order, with usage text when one exists. */
   function customAgentUsage(): CustomAgentUsageRow[] {
-    return state.agents.flatMap((agent) => {
-      const answer = agent.usagePrompt ? state.usage.find((usage) => usage.id === agent.id) : undefined;
-      return answer ? [{ id: agent.id, name: agent.name, text: answer.text }] : [];
-    });
+    return customAgentRailRows(state.agents, state.usage);
   }
 
   /** Each agent answers in a model-list process, so this can take as long as the slowest agent. */
