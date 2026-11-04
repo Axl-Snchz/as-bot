@@ -3,7 +3,7 @@ import type { messages as source } from "../en/app";
 
 export const messages = {
   // The app shell, shared state, and shared controls without a feature of their own.
-  "app.loading": "正在加载 OpenBot",
+  "app.loading": "正在加载 AS Bot",
   "app.leftPanel.resize": "调整左侧栏宽度",
   "app.host.thisMac": "这台 Mac",
   "app.host.thisComputer": "这台电脑",
