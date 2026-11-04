@@ -168,7 +168,7 @@ if (!isString(packageJson.version)) throw new Error("package.json version is mis
 const packagedManifest = JSON.parse(await readAsarFile(asarPath, "package.json"));
 if (!isDynamicRecord(packagedManifest)) throw new Error("The packaged package.json is not a JSON object.");
 expectEqual(packagedManifest.name, "openbot", "packaged name");
-expectEqual(packagedManifest.productName, "OpenBot", "packaged product name");
+expectEqual(packagedManifest.productName, "AS Bot", "packaged product name");
 expectEqual(packagedManifest.version, packageJson.version, "packaged version");
 
 await assertElfMachine(executablePath);

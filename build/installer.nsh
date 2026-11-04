@@ -46,7 +46,7 @@
 !macroend
 
 ; OpenBot keeps the agent workspaces in %USERPROFILE%\OpenBot (`src/backend/agent-store.ts`) and its
-; user data in %APPDATA%\OpenBot (`app.setName` in `src/main/index.ts`). The uninstaller deletes the
+; user data in %APPDATA%\OpenBot (`PACKAGED_USER_DATA_DIRECTORY` in `src/main/index.ts`). The uninstaller deletes the
 ; installation folder, and an update moves each file in it to a temporary folder that it then
 ; deletes. An installation folder must not be one of these folders or a folder that holds one.
 ; Sets OUT to "1" when the folder in the variable PATH is such a folder, otherwise to "0". A

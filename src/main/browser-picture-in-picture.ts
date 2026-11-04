@@ -1,6 +1,6 @@
 import type { BrowserBounds, BrowserPictureInPictureEvent } from "@openbot/contracts/ipc";
 import { Effect, Schema } from "effect";
-import { BrowserWindow, screen, WebContentsView } from "electron";
+import { app, BrowserWindow, screen, WebContentsView } from "electron";
 import type { BrowserHost } from "../backend/browser-host";
 import { causeHelpers } from "../backend/effect-boundary";
 import {
@@ -69,7 +69,7 @@ export class BrowserPictureInPicture {
       maximizable: false,
       skipTaskbar: true,
       backgroundColor: windowBackgroundColor(PICTURE_IN_PICTURE_DARK_BACKGROUND),
-      title: "OpenBot Browser",
+      title: `${app.getName()} Browser`,
       icon: this.#options.iconPath,
       webPreferences: {
         preload: this.#options.preloadPath,

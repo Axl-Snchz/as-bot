@@ -140,7 +140,7 @@ import { setWindowAppearance } from "./window-appearance";
 import { placeWindowButtons } from "./window-buttons";
 
 const logger = createOpenBotLogger("main");
-const PACKAGED_USER_DATA_DIRECTORY = "OpenBot";
+const PACKAGED_USER_DATA_DIRECTORY = "OpenBot"; // Do not change: real user data and build/installer.nsh depend on this path.
 
 // Electron keeps running after both events: an unhandled rejection only prints a warning, and a
 // monitor leaves the default exception handling in place, except after `hideExceptionErrorBox`. These
@@ -909,7 +909,7 @@ function requestDesktopNotificationPermission(
       preference,
       showWelcome: () => {
         if (!Notification.isSupported()) return;
-        showRetainedNotification(new Notification({ title: "OpenBot", body: translate("notification.welcome") }));
+        showRetainedNotification(new Notification({ title: app.getName(), body: translate("notification.welcome") }));
       },
     }),
   );
