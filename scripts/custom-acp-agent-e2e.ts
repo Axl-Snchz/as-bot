@@ -16,10 +16,13 @@ import type { AgentClient } from "../src/backend/agent-client";
 import { runCauseEffect } from "../src/backend/effect-boundary";
 import { requireProviderDriver } from "../src/backend/provider-drivers";
 import { CustomAgentStore } from "../src/main/custom-agent-store";
+import { customAgentRailRows } from "../src/renderer/src/features/custom-agents/custom-agent-rail-rows";
 import { installFakeAgent, readJsonl, runTurn, startThread, stopClients, xorCipher } from "./provider-fakes/host";
 
 const OUT = resolve(import.meta.dirname, "../.openbot-build/custom-acp-agent-e2e");
 const SECRET = "sk-e2e-agent-secret";
+const IS_WINDOWS = process.platform === "win32";
+const CUSTOM_ACP_FAKE_AGENT = resolve(import.meta.dirname, "provider-fakes/agents/custom-acp.ts");
 // A routed thread id is `<agent>:<folder tag>:<session>`; the folder tag is 12 hex digits.
 const ROUTED_THREAD = (agent: string) => new RegExp(`^${agent}:[0-9a-f]{12}:s-\\d+$`);
 
@@ -39,6 +42,16 @@ interface Report {
   crashMasked?: { message: string };
   turns?: { models: string[]; alphaThread: string; betaThread: string; alphaReply: string; betaReply: string };
   usage?: { answer: string | null; threadProcesses: number; usageProcess: number };
+  rail?: {
+    beforeClear: {
+      ids: string[];
+      withUsage: string[];
+      unavailable: string[];
+    };
+    renamed: { id: string; name: string; usageText: string | null };
+    afterClear: { alphaUsageText: string | null; betaUsageText: string | null };
+    deleted: { removedId: string; remainingIds: string[] };
+  };
   restart?: { processesStopped: number; loadedSession: string | null | undefined; resumedReply: string };
   switch?: { missingSession: boolean };
   delete?: { refused: string };
@@ -71,9 +84,12 @@ async function reply(client: AgentClient, thread: string, model: string, text: s
 
 try {
   const executable = join(root, "bin", "fake-acp-agent");
+  const command = IS_WINDOWS ? process.execPath : executable;
+  const withCommandPrefix = (...args: string[]) => (IS_WINDOWS ? [CUSTOM_ACP_FAKE_AGENT, ...args] : args);
   const workspace = join(root, "workspace");
   const alphaLog = join(root, "alpha.jsonl");
   const betaLog = join(root, "beta.jsonl");
+  const gammaLog = join(root, "gamma.jsonl");
   await mkdir(workspace);
   await installFakeAgent(executable, "custom-acp");
 
@@ -84,8 +100,8 @@ try {
     store.save({
       id: "alpha",
       name: "Alpha",
-      command: executable,
-      args: ["--acp"],
+      command,
+      args: withCommandPrefix("--acp"),
       env: [
         { name: "FAKE_LOG", value: alphaLog },
         { name: "FAKE_TITLE", value: "Alpha" },
@@ -99,13 +115,26 @@ try {
     store.save({
       id: "beta",
       name: "Beta",
-      command: executable,
-      args: [],
+      command,
+      args: withCommandPrefix(),
       env: [
         { name: "FAKE_LOG", value: betaLog },
         { name: "FAKE_TITLE", value: "Beta" },
       ],
       usagePrompt: null,
+    }),
+  );
+  await runCauseEffect(
+    store.save({
+      id: "gamma",
+      name: "Gamma",
+      command,
+      args: withCommandPrefix(),
+      env: [
+        { name: "FAKE_LOG", value: gammaLog },
+        { name: "FAKE_TITLE", value: "Gamma" },
+      ],
+      usagePrompt: "/usage",
     }),
   );
   const file = await readFile(join(root, "custom-agents.json"), "utf8");
@@ -130,8 +159,8 @@ try {
   const checkLog = join(root, "check.jsonl");
   const check = await runCauseEffect(
     checkAcpAgent({
-      executable,
-      args: ["--acp"],
+      executable: command,
+      args: withCommandPrefix("--acp"),
       env: { FAKE_LOG: checkLog, FAKE_TITLE: "Alpha", FAKE_TOKEN: SECRET },
     }),
   );
@@ -146,8 +175,8 @@ try {
   assert.equal(isRunning(checkPid), false, "Check agent stops the process.");
   const crash = await runCauseEffect(
     checkAcpAgent({
-      executable,
-      args: [],
+      executable: command,
+      args: withCommandPrefix(),
       env: { FAKE_LOG: checkLog, FAKE_CRASH: "1", FAKE_TOKEN: SECRET },
       timeoutMs: 5_000,
     }),
@@ -163,8 +192,8 @@ try {
   const modelsLog = join(root, "check-models.jsonl");
   const listed = await runCauseEffect(
     checkAcpAgent({
-      executable,
-      args: ["--acp"],
+      executable: command,
+      args: withCommandPrefix("--acp"),
       env: { FAKE_LOG: modelsLog, FAKE_TITLE: "Alpha", FAKE_MODELS: "1", FAKE_TOKEN: SECRET },
       listModels: true,
     }),
@@ -176,8 +205,8 @@ try {
   assert.equal(isRunning(modelsEntries[0]?.pid ?? 0), false, "Check agent stops the process after the models.");
   const signIn = await runCauseEffect(
     checkAcpAgent({
-      executable,
-      args: ["--acp"],
+      executable: command,
+      args: withCommandPrefix("--acp"),
       env: { FAKE_LOG: modelsLog, FAKE_TITLE: "Alpha", FAKE_SIGN_IN: "1", FAKE_TOKEN: SECRET },
       listModels: true,
     }),
@@ -204,7 +233,8 @@ try {
   let client = open();
   const models = await runCauseEffect(client.request("model/list", {}, (value) => value));
   const modelIds = JSON.stringify(models);
-  for (const id of ["alpha/fast", "alpha/deep", "beta/default"]) assert.ok(modelIds.includes(`"${id}"`), id);
+  for (const id of ["alpha/fast", "alpha/deep", "beta/default", "gamma/default"])
+    assert.ok(modelIds.includes(`"${id}"`), id);
 
   const alphaThread = await startThread(client, { model: "alpha/deep", cwd: workspace });
   const betaThread = await startThread(client, { model: "beta/default", cwd: workspace });
@@ -244,6 +274,114 @@ try {
   const usagePids = [...promptPids(await readJsonl<LogEntry>(alphaLog))].filter((pid) => !threadPids.has(pid));
   assert.equal(usagePids.length, 1, "The usage prompt runs on a process that serves no thread.");
   report.usage = { answer: usageAnswer, threadProcesses: threadPids.size, usageProcess: usagePids.length };
+
+  // 3c. Rail rows: all saved agents stay in list order. A usage answer shows only while the agent has
+  // a usage prompt, so clearing that prompt hides stale text but keeps the row.
+  const railRowsBeforeClear = customAgentRailRows(await Effect.runPromise(store.list()), [
+    { id: "alpha", text: usageAnswer },
+  ]);
+  assert.deepEqual(
+    railRowsBeforeClear.map((row) => row.id),
+    ["alpha", "beta", "gamma"],
+    "All saved custom agents render in the rail.",
+  );
+  assert.equal(railRowsBeforeClear.find((row) => row.id === "alpha")?.usageText, usageAnswer);
+  assert.equal(
+    railRowsBeforeClear.find((row) => row.id === "beta")?.usageText,
+    undefined,
+    "An agent with no usage prompt shows no usage text.",
+  );
+  assert.equal(
+    railRowsBeforeClear.find((row) => row.id === "gamma")?.usageText,
+    undefined,
+    "An agent with a prompt and no answer shows no usage text.",
+  );
+
+  await runCauseEffect(
+    store.save({
+      id: "beta",
+      name: "Beta Renamed",
+      command,
+      args: withCommandPrefix(),
+      env: [
+        { name: "FAKE_LOG", value: betaLog },
+        { name: "FAKE_TITLE", value: "Beta" },
+      ],
+      usagePrompt: null,
+    }),
+  );
+  const railRowsRenamed = customAgentRailRows(await Effect.runPromise(store.list()), [
+    { id: "alpha", text: usageAnswer },
+  ]);
+  assert.equal(
+    railRowsRenamed.find((row) => row.id === "beta")?.name,
+    "Beta Renamed",
+    "Rename updates the rail row name.",
+  );
+  assert.equal(
+    railRowsRenamed.find((row) => row.id === "alpha")?.usageText,
+    usageAnswer,
+    "Renaming another agent keeps this agent's usage text.",
+  );
+
+  await runCauseEffect(
+    store.save({
+      id: "alpha",
+      name: "Alpha",
+      command,
+      args: withCommandPrefix("--acp"),
+      env: [
+        { name: "FAKE_LOG", value: alphaLog },
+        { name: "FAKE_TITLE", value: "Alpha" },
+        { name: "FAKE_MODELS", value: "1" },
+        { name: "FAKE_TOKEN", value: SECRET },
+      ],
+      usagePrompt: null,
+    }),
+  );
+  const railRowsAfterClear = customAgentRailRows(await Effect.runPromise(store.list()), [
+    { id: "alpha", text: usageAnswer },
+  ]);
+  assert.equal(
+    railRowsAfterClear.find((row) => row.id === "alpha")?.usageText,
+    undefined,
+    "A stale usage answer is hidden when the usage prompt is cleared.",
+  );
+  assert.equal(
+    railRowsAfterClear.find((row) => row.id === "beta")?.name,
+    "Beta Renamed",
+    "Other saved agents stay unchanged when one prompt is cleared.",
+  );
+
+  await runCauseEffect(store.remove("gamma"));
+  const railRowsAfterDelete = customAgentRailRows(await Effect.runPromise(store.list()), [
+    { id: "alpha", text: usageAnswer },
+  ]);
+  assert.deepEqual(
+    railRowsAfterDelete.map((row) => row.id),
+    ["alpha", "beta"],
+    "Delete removes only that rail row.",
+  );
+  report.rail = {
+    beforeClear: {
+      ids: railRowsBeforeClear.map((row) => row.id),
+      withUsage: railRowsBeforeClear.flatMap((row) => (row.usageText ? [row.id] : [])),
+      unavailable: railRowsBeforeClear.flatMap((row) => (row.usageText ? [] : [row.id])),
+    },
+    renamed: {
+      id: "beta",
+      name: railRowsRenamed.find((row) => row.id === "beta")?.name ?? "",
+      usageText: railRowsRenamed.find((row) => row.id === "beta")?.usageText ?? null,
+    },
+    afterClear: {
+      alphaUsageText: railRowsAfterClear.find((row) => row.id === "alpha")?.usageText ?? null,
+      betaUsageText: railRowsAfterClear.find((row) => row.id === "beta")?.usageText ?? null,
+    },
+    deleted: {
+      removedId: "gamma",
+      remainingIds: railRowsAfterDelete.map((row) => row.id),
+    },
+  };
 
   // 4. Restart: a new router loads the saved session on a new process and runs a turn on it.
   const pidsBefore = [...new Set([...alphaEntries, ...(await readJsonl<LogEntry>(betaLog))].map((entry) => entry.pid))];

@@ -48,7 +48,21 @@ const sharedQuotaRows = accountUsageProviderRows({
 
 /** An example answer. Each agent writes its own text, which the card shows as it is. */
 const customAgentUsage: CustomAgentUsageRailRow[] = [
-  { id: "devin", name: "Devin", text: "Plan: Team\nACUs used this cycle: 42 of 250\nThe cycle resets in 12 days." },
+  {
+    id: "devin",
+    name: "Devin",
+    usageText: "Plan: Team\nACUs used this cycle: 42 of 250\nThe cycle resets in 12 days.",
+  },
+];
+
+const customAgentsMixedUsage: CustomAgentUsageRailRow[] = [
+  {
+    id: "devin",
+    name: "Devin",
+    usageText: "Plan: Team\nACUs used this cycle: 42 of 250\nThe cycle resets in 12 days.",
+  },
+  { id: "copilot-local", name: "Copilot" },
+  { id: "copilot-experimental", name: "Copilot Experimental" },
 ];
 
 /** The page rail as the desktop window shows it. Hover a button, or move to it with Tab, to see its tooltip. */
@@ -118,6 +132,11 @@ export const SettingsNotice: Story = {
 /** A custom agent with a usage command: its logo with no ring. Hover it to see the answer. */
 export const CustomAgentUsage: Story = {
   args: { customAgentUsage },
+};
+
+/** Saved custom agents always show. Missing usage answers show an honest neutral state. */
+export const CustomAgentsMixedUsage: Story = {
+  args: { customAgentUsage: customAgentsMixedUsage },
 };
 
 /** Grok and a merged Cursor plan share one quota, so the rail shows the Grok ring alone. */
