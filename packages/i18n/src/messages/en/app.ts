@@ -75,6 +75,7 @@ export const messages = defineMessages("app", {
   "app.githubStar.thanksBody": "You just made our day.",
   "app.rail.usageRings": "{name} usage: {windows}. Open usage",
   "app.rail.customAgentUsage": "{name} usage. Open usage",
+  "app.rail.customAgentNoUsage": "No usage data",
   "app.settingsPage.title": "Settings",
   "app.settingsPage.search": "Search settings",
   "app.settingsPage.searchPlaceholder": "Search settings…",

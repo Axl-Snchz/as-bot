@@ -134,7 +134,7 @@ export const CustomAgentUsage: Story = {
   args: { customAgentUsage },
 };
 
-/** Saved custom agents always show. Missing usage answers show an honest neutral state. */
+/** Saved custom agents always show. Missing usage answers show "No usage data". */
 export const CustomAgentsMixedUsage: Story = {
   args: { customAgentUsage: customAgentsMixedUsage },
 };

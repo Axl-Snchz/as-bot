@@ -148,7 +148,7 @@ export interface CustomAgentUsageRailRow {
 
 /**
  * One saved custom agent in the rail: neutral ACP logo, with no ring. The hover card shows either the
- * last answer as written by the agent, or "Unavailable" while no answer exists.
+ * last answer as written by the agent, or "No usage data" while no answer exists.
  */
 function CustomAgentUsageButton(props: { row: CustomAgentUsageRailRow; onOpen: (button: HTMLElement) => void }) {
   const { t } = useText();
@@ -158,7 +158,7 @@ function CustomAgentUsageButton(props: { row: CustomAgentUsageRailRow; onOpen: (
       card={() => (
         <div class="window-rail-agent-usage">
           <h2 class="account-usage-popover-title">{props.row.name}</h2>
-          <p class="window-rail-agent-usage-text">{props.row.usageText ?? t("account.usage.value.unavailable")}</p>
+          <p class="window-rail-agent-usage-text">{props.row.usageText ?? t("app.rail.customAgentNoUsage")}</p>
         </div>
       )}
       class="window-rail-usage"

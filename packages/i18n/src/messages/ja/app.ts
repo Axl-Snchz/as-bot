@@ -75,6 +75,7 @@ export const messages = {
   "app.githubStar.thanksBody": "とても励みになります。",
   "app.rail.usageRings": "{name} の使用量: {windows}。使用量を開く",
   "app.rail.customAgentUsage": "{name} の使用量。使用量を開く",
+  "app.rail.customAgentNoUsage": "使用データなし",
   "app.settingsPage.title": "設定",
   "app.settingsPage.search": "設定を検索",
   "app.settingsPage.searchPlaceholder": "設定を検索…",
