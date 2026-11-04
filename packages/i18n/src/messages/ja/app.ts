@@ -3,7 +3,7 @@ import type { messages as source } from "../en/app";
 
 export const messages = {
   // The app shell, shared state, and shared controls without a feature of their own.
-  "app.loading": "OpenBot を読み込んでいます",
+  "app.loading": "AS Bot を読み込んでいます",
   "app.leftPanel.resize": "左サイドバーのサイズを変更",
   "app.host.thisMac": "この Mac",
   "app.host.thisComputer": "このコンピューター",

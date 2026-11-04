@@ -140,6 +140,7 @@ import { setWindowAppearance } from "./window-appearance";
 import { placeWindowButtons } from "./window-buttons";
 
 const logger = createOpenBotLogger("main");
+const PACKAGED_USER_DATA_DIRECTORY = "OpenBot"; // Do not change: real user data and build/installer.nsh depend on this path.
 
 // Electron keeps running after both events: an unhandled rejection only prints a warning, and a
 // monitor leaves the default exception handling in place, except after `hideExceptionErrorBox`. These
@@ -258,8 +259,10 @@ if (commandLineUserDataDirectory) {
       ),
     ),
   );
+} else {
+  app.setPath("userData", join(app.getPath("appData"), PACKAGED_USER_DATA_DIRECTORY));
 }
-app.setName("OpenBot");
+app.setName("AS Bot");
 app.enableSandbox();
 if (process.platform === "win32") app.setAppUserModelId("com.asbot.desktop");
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
@@ -906,7 +909,7 @@ function requestDesktopNotificationPermission(
       preference,
       showWelcome: () => {
         if (!Notification.isSupported()) return;
-        showRetainedNotification(new Notification({ title: "OpenBot", body: translate("notification.welcome") }));
+        showRetainedNotification(new Notification({ title: app.getName(), body: translate("notification.welcome") }));
       },
     }),
   );

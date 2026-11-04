@@ -2,7 +2,7 @@ import type { PartialTranslation } from "../../message";
 import type { messages as source } from "../en/app";
 
 export const messages = {
-  "app.loading": "OpenBot 불러오는 중",
+  "app.loading": "AS Bot 불러오는 중",
   "app.leftPanel.resize": "왼쪽 사이드바 크기 조절",
   "app.host.thisMac": "이 Mac",
   "app.host.thisComputer": "이 컴퓨터",

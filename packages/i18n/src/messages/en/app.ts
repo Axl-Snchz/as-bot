@@ -2,7 +2,7 @@ import { defineMessages } from "../../message";
 
 export const messages = defineMessages("app", {
   // The app shell, shared state, and shared controls without a feature of their own.
-  "app.loading": "Loading OpenBot",
+  "app.loading": "Loading AS Bot",
   "app.leftPanel.resize": "Resize left sidebar",
   "app.host.thisMac": "This Mac",
   "app.host.thisComputer": "This computer",

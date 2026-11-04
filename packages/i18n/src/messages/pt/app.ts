@@ -2,7 +2,7 @@ import type { PartialTranslation } from "../../message";
 import type { messages as source } from "../en/app";
 
 export const messages = {
-  "app.loading": "Carregando o OpenBot",
+  "app.loading": "Carregando o AS Bot",
   "app.leftPanel.resize": "Redimensionar barra lateral esquerda",
   "app.host.thisMac": "Este Mac",
   "app.host.thisComputer": "Este computador",
