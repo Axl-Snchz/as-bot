@@ -102,6 +102,7 @@ import {
   untrack,
 } from "solid-js";
 import { useText } from "../../text";
+import type { CustomAgentUsageRow } from "../account/custom-agent-usage";
 import { AVATAR_HUE_LABEL } from "../agents/avatar-hue-label";
 import { SERVER_NOTIFICATION_LEVEL_LABELS } from "../servers/ServerActionItems";
 import { type AgentFolderCalls, AgentFoldersPage, AgentFoldersRow, createAgentFolders } from "./AgentFolders";
@@ -162,6 +163,8 @@ export interface AgentSettingsPanelProps {
   customProviders?: readonly CustomProviderSummary[] | undefined;
   /** The user's own ACP agents on this computer, for the model picker's Custom tab. */
   customAgents?: readonly CustomAgentSummary[] | undefined;
+  /** Usage rows for local custom agents, including Copilot quota when available. */
+  customAgentUsage?: readonly CustomAgentUsageRow[] | undefined;
   onDownloadProvider?: ((provider: AgentProviderId) => void | Promise<void>) | undefined;
   onCancelProviderDownload?: ((provider: AgentProviderId) => void | Promise<void>) | undefined;
   onConnectProvider?: ((provider: AgentProviderId) => void | Promise<void>) | undefined;
@@ -1314,6 +1317,7 @@ export default function AgentSettingsPanel(props: AgentSettingsPanelProps) {
                   runtimeStatuses={props.providerRuntimeStatuses}
                   customProviders={props.customProviders}
                   customAgents={props.customAgents}
+                  customAgentUsage={props.customAgentUsage}
                   onDownloadProvider={props.onDownloadProvider}
                   onCancelProviderDownload={props.onCancelProviderDownload}
                   onConnectProvider={props.onConnectProvider}

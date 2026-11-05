@@ -1,0 +1,20 @@
+.account-usage-ring-svg {
+  fill: none;
+}
+
+.account-usage-ring-track {
+  stroke: currentcolor;
+  opacity: 0.15;
+}
+
+.account-usage-ring-arc {
+  stroke: var(--openbot-success);
+}
+
+.account-usage-ring-arc[data-usage-tone="warning"] {
+  stroke: var(--openbot-warning);
+}
+
+.account-usage-ring-arc[data-usage-tone="critical"] {
+  stroke: var(--openbot-danger);
+}

@@ -120,6 +120,7 @@ export function ConversationHeader() {
         runtimeStatuses: props.providerRuntimeStatuses,
         customProviders: props.customProviders,
         customAgents: props.customAgents,
+        customAgentUsage: props.customAgentUsage,
         onDownloadProvider: props.onDownloadProvider,
         onCancelProviderDownload: props.onCancelProviderDownload,
         onConnectProvider: props.onConnectProvider,

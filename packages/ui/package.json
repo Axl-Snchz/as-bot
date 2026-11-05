@@ -70,6 +70,7 @@
     "./features/account/AccountUsageDetails": "./src/features/account/AccountUsageDetails.tsx",
     "./features/account/OtpInput": "./src/features/account/OtpInput.tsx",
     "./features/account/otp-input.css": "./src/features/account/otp-input.css",
+    "./features/account/account-usage-rings.css": "./src/features/account/account-usage-rings.css",
     "./features/account/account-usage-view": "./src/features/account/account-usage-view.ts",
     "./features/agents/AgentAvatar": "./src/features/agents/AgentAvatar.tsx",
     "./features/agents/AgentDeleteUndoToast": "./src/features/agents/AgentDeleteUndoToast.tsx",

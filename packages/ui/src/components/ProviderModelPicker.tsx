@@ -52,7 +52,21 @@ import { ContentExitMotion } from "@openbot/ui/menu-motion";
 import { cx } from "@openbot/ui/utils";
 import type { JSX } from "@solidjs/web";
 import { createEffect, createMemo, createSignal, For, onSettled, Show, untrack } from "solid-js";
-import { formatUsageReset, usageWindowLabel } from "../features/account/account-usage-view";
+import { RESET_CLOCK_MS } from "../features/account/AccountUsageDetails";
+import {
+  type AccountUsageProviderRow,
+  accountUsageProviderRows,
+  accountUsageRowLabel,
+  formatUsageReset,
+  usageWindowLabel,
+} from "../features/account/account-usage-view";
+import {
+  type CustomAgentUsageQuota,
+  type CustomAgentUsageRow,
+  customAgentCopilotUsageRow,
+} from "../features/account/custom-agent-usage";
+import { ProviderModelUsagePreview } from "../features/account/ProviderModelUsagePreview";
+import { AccountUsageRingIcon, accountUsageRingGroups, accountUsageRingTracks } from "../features/account/usage-rings";
 import { currentText, type TextValue, useText } from "../text";
 import { createScrollFades } from "./createScrollFades";
 import { providerAccountName } from "./provider-accounts";
@@ -97,6 +111,8 @@ interface ProviderModelPickerProps {
   customProviders?: readonly CustomProviderSummary[] | undefined;
   /** The user's own ACP agents; provider `acp`, drawn on the Custom tab with one group each. */
   customAgents?: readonly CustomAgentSummary[] | undefined;
+  /** Usage rows for local custom agents, including Copilot quota when available. */
+  customAgentUsage?: readonly ProviderModelPickerCustomAgentUsageRow[] | undefined;
   /** Receives the picker trigger, so focus returns to it when the opened settings close. */
   onAddCustomProvider?: ((trigger: HTMLElement) => void) | undefined;
   /** Opens the provider settings: a plus button after the rail, to connect one. Receives the picker trigger. */
@@ -129,6 +145,10 @@ interface ProviderModelPickerProps {
     reasoningEffort?: AgentReasoningEffort,
   ) => void;
 }
+
+export type ProviderModelPickerCustomAgentQuota = CustomAgentUsageQuota;
+
+export type ProviderModelPickerCustomAgentUsageRow = CustomAgentUsageRow;
 
 /** Extra "custom" rail tab; widening the contract id would cost a migration. */
 type RailId = AgentProviderId | "custom";
@@ -371,6 +391,35 @@ export function ProviderModelPicker(props: ProviderModelPickerProps) {
    * next reset while it is open.
    */
   const [now, setNow] = createSignal(Date.now());
+  const usageRows = createMemo(() =>
+    accountUsageProviderRows(props.accountUsage ?? null, props.agentStatus.providers, text).filter(
+      (row) => row.reportsUsage && row.windows.length > 0,
+    ),
+  );
+  const usageGroups = createMemo(() => accountUsageRingGroups(usageRows()));
+  const copilotUsageRows = createMemo(() =>
+    (props.customAgentUsage ?? []).flatMap((row) => {
+      const usage = customAgentCopilotUsageRow(row, text);
+      return usage ? [usage] : [];
+    }),
+  );
+  /** Usage rows for one rail entry: one built-in provider account, or all Copilot custom agents. */
+  const entryUsageRows = (key: RailKey): AccountUsageProviderRow[] => {
+    const rail = railOf(key);
+    if (rail === CUSTOM_RAIL) return copilotUsageRows();
+    const accountId = key === rail ? null : key.slice(rail.length + 1);
+    const grouped = usageGroups().find((group) => group.row.provider === rail && group.row.accountId === accountId);
+    return grouped ? [grouped.row, ...grouped.shared] : [];
+  };
+  const entryUsageLabel = (key: RailKey): string =>
+    entryUsageRows(key)
+      .map((row) => accountUsageRowLabel(row, text, false))
+      .join(", ");
+  const usagePreviewRows = (key: RailKey): AccountUsageProviderRow[] => {
+    const rows = entryUsageRows(key);
+    if (rows.length <= 1) return rows;
+    return [...rows].sort((left, right) => (left.remainingPercent ?? 100) - (right.remainingPercent ?? 100));
+  };
   /** The spent plan window that limits a model of a rail entry now. Each account has its own quota. */
   const spentWindow = (rail: RailId, accountId: string | null, model: string): AccountUsageWindow | undefined => {
     if (rail === CUSTOM_RAIL) return undefined;
@@ -439,6 +488,15 @@ export function ProviderModelPicker(props: ProviderModelPickerProps) {
     () => ({ key: activeKey(), open: open(), visible: visibleKeys(), rail: railProvider() }),
     ({ key, open, visible, rail }) => {
       if (!open || !visible.includes(rail)) setRailProvider(visible.includes(key) ? key : (visible[0] ?? CUSTOM_RAIL));
+    },
+  );
+
+  createEffect(
+    () => open(),
+    (isOpen) => {
+      if (!isOpen) return;
+      const timer = window.setInterval(() => setNow(Date.now()), RESET_CLOCK_MS);
+      return () => window.clearInterval(timer);
     },
   );
 
@@ -672,6 +730,8 @@ export function ProviderModelPicker(props: ProviderModelPickerProps) {
                     const account = () => entryAccount(key);
                     const status = () => entryStatus(key);
                     const name = () => entryName(key);
+                    const usage = () => entryUsageRows(key);
+                    const usageLabel = () => entryUsageLabel(key);
                     return (
                       // The rail shows a mark alone, so hovering one names it. Focus needs no tooltip:
                       // tabs activate on focus, and the panel heading beside them names the tab.
@@ -687,11 +747,12 @@ export function ProviderModelPicker(props: ProviderModelPickerProps) {
                               {
                                 "provider-model-rail-button-selected": railProvider() === key,
                                 "provider-model-rail-button-unavailable": status().state !== "available",
+                                "provider-model-rail-button-usage": usage().length > 0,
                               },
                             ]}
                             data-state={status().state}
                             aria-label={spentLabel(
-                              `${name()}: ${railSummary(provider, status())}`,
+                              `${name()}: ${railSummary(provider, status())}${usageLabel() ? `, ${usageLabel()}` : ""}`,
                               status().state === "available" ? entrySpentWindow(key) : undefined,
                             )}
                             onClick={(event) => {
@@ -713,6 +774,12 @@ export function ProviderModelPicker(props: ProviderModelPickerProps) {
                               if (next) providerButtons.get(next)?.focus();
                             }}
                           >
+                            <Show when={usage().length > 0}>
+                              <AccountUsageRingIcon
+                                tracks={accountUsageRingTracks(usage())}
+                                class="provider-model-rail-ring"
+                              />
+                            </Show>
                             <ProviderMark provider={provider} large />
                             <Show when={account()}>
                               {(entry) => (
@@ -1041,6 +1108,11 @@ export function ProviderModelPicker(props: ProviderModelPickerProps) {
                         </Button>
                       </Show>
                     </div>
+                    <ProviderModelUsagePreview
+                      rows={usagePreviewRows(key)}
+                      now={now()}
+                      label={t("account.usage.providers")}
+                    />
                     <Show when={!available()}>
                       <div class="provider-model-empty" role="status">
                         <span>{runtimeMessage()}</span>

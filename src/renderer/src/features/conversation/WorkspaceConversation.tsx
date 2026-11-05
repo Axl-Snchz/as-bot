@@ -112,7 +112,8 @@ export function WorkspaceConversation(props: { account: () => CentralAuthUser })
     else await connection.connect(provider, "composer");
   };
   const signInWithCode = (provider: AgentProviderId) => connection.alternative(provider, "composer");
-  const { customAgents } = useCustomAgents();
+  const { customAgents, customAgentUsage } = useCustomAgents();
+  const localCustomAgentUsage = () => (activeServer()?.kind === "local" ? customAgentUsage() : undefined);
   const {
     agentStatus,
     hostAccountLimits,
@@ -533,6 +534,7 @@ export function WorkspaceConversation(props: { account: () => CentralAuthUser })
         customProviders={activeCustomProviders()}
         // The custom agents are this computer's. A joined host's picker counts its own from its models.
         customAgents={activeServer()?.kind === "local" ? customAgents() : undefined}
+        customAgentUsage={localCustomAgentUsage()}
         onDownloadProvider={providerDownloads() ? downloadProviderRuntime : undefined}
         onCancelProviderDownload={providerDownloads() ? cancelProviderRuntimeDownload : undefined}
         onConnectProvider={localProviderDownloads() || providerAdminServerId() ? connectFromComposer : undefined}

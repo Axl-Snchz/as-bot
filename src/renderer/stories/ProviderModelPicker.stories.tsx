@@ -269,3 +269,47 @@ const usageLimitArgs: Parameters<typeof ProviderModelPicker>[0] = {
  * The rows and the tab show no mark; their names tell a screen reader. Codex has quota left.
  */
 export const UsageLimitReached: Story = { render: () => <ProviderModelPicker {...usageLimitArgs} /> };
+
+export const UsagePreviewBuiltInWarning: Story = {
+  args: {
+    ...usageLimitArgs,
+    accountUsage: {
+      limits: [
+        {
+          id: "claude",
+          primary: { usedPercent: 88, windowDurationMins: 300, resetsAt: spentWeekResetsAt - 2 * 24 * 60 * 60 },
+          secondary: { usedPercent: 94, windowDurationMins: 10_080, resetsAt: spentWeekResetsAt },
+        },
+      ],
+    },
+  },
+};
+
+export const UsagePreviewNoData: Story = {
+  args: {
+    ...usageLimitArgs,
+    accountUsage: { limits: [] },
+  },
+};
+
+export const UsagePreviewCopilotCustomAgent: Story = {
+  args: {
+    ...CustomTabWithModels.args,
+    provider: "opencode",
+    value: "studio-local/qwen3-coder:30b",
+    customAgentUsage: [
+      {
+        id: "copilot-local",
+        name: "Copilot",
+        providerLogo: "copilot",
+        quota: { state: "ready", remainingPercent: 21, tone: "warning", resetAtMs: Date.now() + 7 * 86_400_000 },
+      },
+      {
+        id: "copilot-no-data",
+        name: "Copilot Experimental",
+        providerLogo: "copilot",
+        quota: { state: "no-data" },
+      },
+    ],
+  },
+};
