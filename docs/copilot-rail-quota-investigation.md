@@ -251,6 +251,48 @@ no permissions were changed, and the running dev stack was not stopped.
 The logo, ring, and popover still need a live visual check when registry access
 is available. No claim of live visual approval is made.
 
-Contrast caveat for unchanged warning/danger fills: those status hues are kept
-as-is per product requirement and do not reach a 3:1 ratio against the neutral
-track in all themes; percent text duplicates the state value.
+## Account usage bar contrast (source-resolved, no browser probe)
+
+Measured with `.openbot-build/account-usage-contrast.mjs`, from token sources
+(`tokens.css`, `tokens-light.css`, `tokens-native.css`) and explicit compositing:
+RGBA track tokens are composited over `--openbot-bg-control`; status tracks use
+`color-mix(in srgb, tone 25%, track-base)` with desktop light override
+`track-base = --openbot-text-primary`. The translucent dark inset edge is then
+composited over its status track, not over the popover surface directly.
+Browser measurement is still blocked by
+the dev-instance registry permission issue above.
+
+Desktop before (old neutral track for all tones):
+
+- Light warning fill/track: 1.91; light critical fill/track: 1.08.
+- Dark warning fill/track: 1.36; dark critical fill/track: 1.23.
+
+Desktop after (implemented):
+
+- Light neutral fill/track 3.83, track/bg 4.81.
+- Light warning fill/track 4.76, track/bg 11.97.
+- Light critical fill/track 3.30, track/bg 14.74.
+- Dark neutral fill/track 3.02, track/bg 5.34.
+- Dark warning fill/track (core) 4.09; track body/bg 1.78; dark inset ring edge/bg 6.68.
+- Dark critical fill/track (core) 3.05; track body/bg 1.42; dark inset ring edge/bg 6.06.
+
+Known limits kept by product constraint:
+
+- Warning/danger fill hues are unchanged.
+- In dark mode, ring edge versus fill is low (warning 1.09, critical 1.40); the
+  high-contrast boundary is the track core (fill/core above 3:1).
+- Warning fill versus light background remains 2.52 and is unchanged.
+
+Native theoretical rows (not rendered by this desktop path):
+
+- `tokens-native.css` has no `--openbot-text-readable`, so neutral-track recipe
+  is unsupported there (`N/A`).
+- Native dark status values with border-base match desktop dark theoretical
+  status rows: warning 4.09, critical 3.05 fill/track.
+- Native light status values are only theoretical:
+  - border-base variant: warning 1.69, critical 1.97 fill/track;
+  - text-primary-base variant (same recipe intent as desktop light): warning
+    4.19, critical 3.64 fill/track.
+- Because native uses `@variant light/dark` blocks and this desktop CSS selector
+  is `:root[data-openbot-color-scheme="light"]`, the text-primary-base native
+  line is documented as theoretical, not as observed cascade behavior.

@@ -164,10 +164,7 @@
 
 .window-rail-agent-usage {
   display: grid;
-  min-width: min(
-    calc((var(--openbot-control-xl) * 8) + (var(--openbot-space-2) * 2)),
-    calc(100vw - var(--openbot-space-4) - var(--openbot-space-4))
-  );
+  min-width: min(var(--account-usage-popover-width), calc(100vw - var(--openbot-space-4) - var(--openbot-space-4)));
   padding-inline: var(--openbot-space-1);
   gap: var(--openbot-space-1);
 }

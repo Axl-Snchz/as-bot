@@ -73,8 +73,8 @@ const barFeedbackRows = accountUsageProviderRows({
   limits: [
     {
       id: "claude",
-      primary: { usedPercent: 0, windowDurationMins: 300, resetsAt: fiveHourReset },
-      secondary: { usedPercent: 22, windowDurationMins: 10_080, resetsAt: shortWeeklyReset },
+      primary: { usedPercent: 75, windowDurationMins: 300, resetsAt: fiveHourReset },
+      secondary: { usedPercent: 92, windowDurationMins: 10_080, resetsAt: shortWeeklyReset },
     },
   ],
 });

@@ -3110,13 +3110,12 @@ textarea {
 }
 
 .account-usage-popover {
+  --account-usage-popover-width: calc((var(--openbot-control-xl) * 8) + (var(--openbot-space-2) * 2));
+
   position: relative;
   z-index: var(--openbot-layer-tooltip);
   display: grid;
-  width: min(
-    calc((var(--openbot-control-xl) * 8) + (var(--openbot-space-2) * 2)),
-    calc(100vw - var(--openbot-space-4))
-  );
+  width: min(var(--account-usage-popover-width), calc(100vw - var(--openbot-space-4)));
   max-height: min(60vh, 420px);
   overflow: auto;
   padding: var(--openbot-space-2);
@@ -3266,10 +3265,27 @@ textarea {
 
 .account-usage-window[data-usage-tone="warning"] {
   --account-usage-window-tone: var(--openbot-warning);
+  --account-usage-window-track-base: var(--openbot-border);
+  --account-usage-window-track: color-mix(
+    in srgb,
+    var(--account-usage-window-tone) 25%,
+    var(--account-usage-window-track-base)
+  );
 }
 
 .account-usage-window[data-usage-tone="critical"] {
   --account-usage-window-tone: var(--openbot-danger);
+  --account-usage-window-track-base: var(--openbot-border);
+  --account-usage-window-track: color-mix(
+    in srgb,
+    var(--account-usage-window-tone) 25%,
+    var(--account-usage-window-track-base)
+  );
+}
+
+:root[data-openbot-color-scheme="light"]
+  .account-usage-window:is([data-usage-tone="warning"], [data-usage-tone="critical"]) {
+  --account-usage-window-track-base: var(--openbot-text-primary);
 }
 
 .account-usage-window-label,
@@ -3287,7 +3303,13 @@ textarea {
   height: var(--openbot-space-1-5);
   overflow: hidden;
   border-radius: var(--openbot-radius-pill);
-  background: var(--openbot-text-readable);
+  background: var(--account-usage-window-track, var(--openbot-text-readable));
+}
+
+:root:not([data-openbot-color-scheme="light"])
+  .account-usage-window:is([data-usage-tone="warning"], [data-usage-tone="critical"])
+  .account-usage-window-bar {
+  box-shadow: inset 0 0 0 1px var(--openbot-text-readable);
 }
 
 .account-usage-window-fill {
