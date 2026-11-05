@@ -52,7 +52,7 @@ const RAIL_PINNED_BY_DEFAULT: ReadonlySet<PageRailPinnablePage> = new Set(["task
 
 // A record, not an object: a page that only another version knows keeps its choice when this version saves.
 const railPinChoicesSchema = z.record(z.string(), z.boolean().optional().catch(undefined));
-const railReorderSchema = z.array(z.string().trim().min(1));
+const railReorderSchema = z.array(z.unknown());
 
 type RailPinChoices = z.infer<typeof railPinChoicesSchema>;
 
@@ -89,7 +89,8 @@ function readRailReorder(): string[] {
     const parsed = railReorderSchema.safeParse(
       JSON.parse(window.localStorage.getItem(RAIL_REORDER_STORAGE_KEY) ?? "[]"),
     );
-    return parsed.success ? normalizeRailReorder(parsed.data) : [];
+    if (!parsed.success) return [];
+    return normalizeRailReorder(parsed.data.flatMap((value) => (typeof value === "string" ? [value] : [])));
   } catch {
     return [];
   }
