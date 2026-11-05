@@ -156,8 +156,7 @@
   stroke: var(--openbot-danger);
 }
 
-/* The usage of a custom agent: its logo with no ring, at the size of a rail icon. The hover card
- * shows the answer of the agent as it wrote it. */
+/* The usage of a custom agent without quota data: logo with no ring, at rail-icon size. */
 .window-rail-button .window-rail-agent-usage-logo {
   width: var(--openbot-icon-md);
   height: var(--openbot-icon-md);
@@ -165,8 +164,13 @@
 
 .window-rail-agent-usage {
   display: grid;
+  min-width: min(300px, calc(100vw - var(--openbot-space-4) - var(--openbot-space-4)));
   padding-inline: var(--openbot-space-1);
   gap: var(--openbot-space-1);
+}
+
+.window-rail-agent-usage-window {
+  grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
 }
 
 .window-rail-agent-usage-text {
@@ -176,6 +180,22 @@
   line-height: var(--openbot-leading-sm);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.window-rail-agent-usage-metric,
+.window-rail-agent-usage-note {
+  margin: 0;
+  color: var(--openbot-text-secondary);
+  font-size: var(--openbot-text-sm);
+  line-height: var(--openbot-leading-sm);
+}
+
+.window-rail-agent-usage-overage {
+  color: var(--openbot-warning);
+}
+
+.window-rail-agent-usage-note {
+  color: var(--openbot-text-muted);
 }
 
 /* A row of the More menu: the page, then its pin. */

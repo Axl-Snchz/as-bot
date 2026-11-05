@@ -235,6 +235,52 @@ const valid: [string, (value: unknown) => unknown, unknown][] = [
     },
   ],
   ["custom agent usage", decodeCustomAgentUsage, [{ id: "devin", text: "Plan: Pro\n42% left" }]],
+  [
+    "custom agent usage with a ready quota state",
+    decodeCustomAgentUsage,
+    [
+      {
+        id: "copilot",
+        text: "Quota ready",
+        quota: {
+          state: "ready",
+          entitlementCredits: 250000,
+          usedCredits: 4250,
+          overageCredits: 0,
+          remainingCredits: 245750,
+          remainingPercentage: 98.3,
+          resetDate: "2026-11-04T23:07:54.462Z",
+          creditUsd: 0.01,
+        },
+      },
+      { id: "copilot-2", text: "No data", quota: { state: "no-data" } },
+      {
+        id: "copilot-3",
+        text: "Error",
+        quota: { state: "error", messageKey: "account.usage.value.unavailable" },
+      },
+    ],
+  ],
+  [
+    "custom agent usage with exhausted entitlement and fractional overage",
+    decodeCustomAgentUsage,
+    [
+      {
+        id: "copilot-overage",
+        text: "Quota ready",
+        quota: {
+          state: "ready",
+          entitlementCredits: 50000,
+          usedCredits: 50000.5,
+          overageCredits: 0.5,
+          remainingCredits: 0,
+          remainingPercentage: 0,
+          resetDate: "2026-11-04T23:07:54.462Z",
+          creditUsd: 0.01,
+        },
+      },
+    ],
+  ],
   ["a model list", decodeDiscoverModelsResult, { models: [{ id: "qwen3" }] }],
   [
     "detection settings",
@@ -345,6 +391,40 @@ const malformed: [string, (value: unknown) => unknown, unknown][] = [
   ["custom agent usage of an invalid id", decodeCustomAgentUsage, [{ id: "Not An Id", text: "42%" }]],
   ["custom agent usage with no text", decodeCustomAgentUsage, [{ id: "devin", text: null }]],
   [
+    "custom agent usage with an invalid quota snapshot",
+    decodeCustomAgentUsage,
+    [{ id: "copilot", text: "broken", quota: { state: "ready", entitlementCredits: Infinity } }],
+  ],
+  [
+    "custom agent usage with invalid overage credits",
+    decodeCustomAgentUsage,
+    [
+      {
+        id: "copilot",
+        text: "broken",
+        quota: {
+          state: "ready",
+          entitlementCredits: 100,
+          usedCredits: 100.1,
+          overageCredits: -0.1,
+          remainingCredits: 0,
+          remainingPercentage: 0,
+          creditUsd: 0.01,
+        },
+      },
+    ],
+  ],
+  [
+    "custom agent usage with an invalid quota error key",
+    decodeCustomAgentUsage,
+    [{ id: "copilot", text: "broken", quota: { state: "error", messageKey: "" } }],
+  ],
+  [
+    "custom agent usage with a non-whitelisted quota error key",
+    decodeCustomAgentUsage,
+    [{ id: "copilot", text: "broken", quota: { state: "error", messageKey: "error.provider.anything" } }],
+  ],
+  [
     "an account analytics answer that is not a yes or a no",
     decodeCentralAuthState,
     {
@@ -367,6 +447,88 @@ describe("app decoding", () => {
 
   it.each(malformed)("rejects %s", (_name, decode, value) => {
     expect(() => decode(value)).toThrow(/^Invalid /);
+  });
+
+  it("strips unknown custom agent usage fields", () => {
+    expect(
+      decodeCustomAgentUsage([
+        {
+          id: "copilot",
+          text: "ok",
+          debug: true,
+          quota: {
+            state: "error",
+            messageKey: "account.usage.value.unavailable",
+            raw: "secret",
+          },
+        },
+      ]),
+    ).toEqual([
+      { id: "copilot", text: "ok", quota: { state: "error", messageKey: "account.usage.value.unavailable" } },
+    ]);
+  });
+
+  it("normalizes missing and malformed Copilot reset dates to null", () => {
+    expect(
+      decodeCustomAgentUsage([
+        {
+          id: "copilot-missing",
+          text: "",
+          quota: {
+            state: "ready",
+            entitlementCredits: 10,
+            usedCredits: 2,
+            overageCredits: 0,
+            remainingCredits: 8,
+            remainingPercentage: 80,
+            creditUsd: 0.01,
+          },
+        },
+        {
+          id: "copilot-malformed",
+          text: "",
+          quota: {
+            state: "ready",
+            entitlementCredits: 10,
+            usedCredits: 2,
+            overageCredits: 0,
+            remainingCredits: 8,
+            remainingPercentage: 80,
+            resetDate: "not-a-date",
+            creditUsd: 0.01,
+          },
+        },
+      ]),
+    ).toEqual([
+      {
+        id: "copilot-missing",
+        text: "",
+        quota: {
+          state: "ready",
+          entitlementCredits: 10,
+          usedCredits: 2,
+          overageCredits: 0,
+          remainingCredits: 8,
+          remainingPercentage: 80,
+          resetDate: null,
+          creditUsd: 0.01,
+        },
+      },
+      {
+        id: "copilot-malformed",
+        text: "",
+        quota: {
+          state: "ready",
+          entitlementCredits: 10,
+          usedCredits: 2,
+          overageCredits: 0,
+          remainingCredits: 8,
+          remainingPercentage: 80,
+          resetDate: null,
+          creditUsd: 0.01,
+        },
+      },
+    ]);
   });
 });
 

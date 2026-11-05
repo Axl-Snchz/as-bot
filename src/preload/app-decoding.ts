@@ -704,7 +704,31 @@ export function decodeCustomAgentUsage(value: unknown): CustomAgentUsage[] {
   if (!Array.isArray(value) || value.length > CUSTOM_AGENT_LIMITS.agents || !value.every(isCustomAgentUsage)) {
     throw new Error("Invalid custom agent usage response.");
   }
-  return value;
+  const decodeResetDate = (resetDate: string | null | undefined): string | null =>
+    typeof resetDate === "string" && resetDate.length > 0 && !Number.isNaN(Date.parse(resetDate)) ? resetDate : null;
+  return value.map((entry) =>
+    entry.quota
+      ? {
+          id: entry.id,
+          text: entry.text,
+          quota:
+            entry.quota.state === "ready"
+              ? {
+                  state: "ready",
+                  entitlementCredits: entry.quota.entitlementCredits,
+                  usedCredits: entry.quota.usedCredits,
+                  overageCredits: entry.quota.overageCredits,
+                  remainingCredits: entry.quota.remainingCredits,
+                  remainingPercentage: entry.quota.remainingPercentage,
+                  resetDate: decodeResetDate(entry.quota.resetDate),
+                  creditUsd: entry.quota.creditUsd,
+                }
+              : entry.quota.state === "error"
+                ? { state: "error", messageKey: entry.quota.messageKey }
+                : { state: "no-data" },
+        }
+      : { id: entry.id, text: entry.text },
+  );
 }
 
 export function decodeCustomAgentCheckResult(value: unknown): CustomAgentCheckResult {

@@ -11,6 +11,7 @@ import type {
   AgentStatus,
   AgentSummary,
   CapabilityState,
+  CustomAgentQuota,
   CustomAgentUsage,
   CustomProviderHarness,
   CustomProviderRestart,
@@ -32,18 +33,27 @@ import { matchingSourceKeys, sourceText } from "@openbot/i18n/source";
 import { createOpenBotLogger, redactText } from "@openbot/logging";
 import { classifyUserError } from "@openbot/user-errors";
 import { Deferred, Effect, Exit, Fiber, Result, Schema, Scope, Semaphore } from "effect";
+import { resolveAgentCommand } from "./../acp-agent-command";
 import { isOpenCodeInternalFailure } from "./../acp-flavor-opencode";
 import { googleSignInByOpenBot, startAcpAuthentication } from "./../acp-sign-in";
 import { type AgentClient, AgentProcessExitError, type AgentProvider } from "./../agent-client";
 import { CodexAppServerClient } from "./../app-server-client";
 import {
   type AgentCliInfo,
+  agentLaunchPath,
   type BundledProviderExecutables,
   CodexCliError,
   cliPathEnvironment,
   cliSpawnTarget,
   resolveInstalledFirst,
 } from "./../cli";
+import {
+  COPILOT_QUOTA_CACHE_MS,
+  copilotUsageSettingsFingerprint,
+  isCopilotCommand,
+  quotaIdentity,
+  readCopilotQuota,
+} from "../copilot-quota";
 import { readCursorUsage } from "./../cursor-usage";
 import { causeHelpers } from "../effect-boundary";
 import { isPythonKimiCli, type SignInRegion } from "../kimi-region";
@@ -122,6 +132,8 @@ const ACCOUNT_USAGE_READ_TIMEOUT_MS = 30_000;
 const CUSTOM_AGENT_USAGE_REUSE_MS = 60_000;
 /** A released `acp` shows its last answers for this long, then starts again to read new ones. */
 const CUSTOM_AGENT_USAGE_WAKE_MS = 60 * 60_000;
+/** A Copilot quota read is reused for at least five minutes, for ready, error and no-data alike. */
+const COPILOT_USAGE_CACHE_MS = COPILOT_QUOTA_CACHE_MS;
 /** The providers whose app server spends a usage reset credit (`account/rateLimitResetCredit/consume`). */
 const USAGE_RESET_PROVIDERS: ReadonlySet<AgentProvider> = new Set(["codex"]);
 /**
@@ -163,6 +175,7 @@ function signInFileVersion(paths: readonly string[]): string {
     })
     .join("|");
 }
+
 /**
  * Starts that fail in a row before OpenBot stops starting a provider by itself. A start that fails,
  * that times out, or whose process ends within `STABLE_RUN_MS` counts. Only a user action starts the
@@ -449,10 +462,23 @@ export class ProviderRuntime implements ProviderPort {
   /** Paces the usage reads of each provider's own sign-in. A new login or credential resets it. */
   readonly #usageGates = new Map<AgentProvider, UsageReadGate>();
   /**
-   * The last answer of each custom agent's usage prompt, with the prompt and the time of the read. A
-   * null text is a read that gave no answer, kept so that a released `acp` does not start for it again.
+   * The last usage result of each custom agent, with the identity and read time. Prompt agents keep
+   * their last text. Copilot keeps ready, error and no-data quota states.
    */
-  readonly #customAgentUsage = new Map<string, { prompt: string; text: string | null; readAt: number }>();
+  readonly #customAgentUsage = new Map<
+    string,
+    | { kind: "prompt"; prompt: string; text: string | null; readAt: number }
+    | {
+        kind: "copilot";
+        identity: string;
+        settingsFingerprint: string;
+        cacheVersion: number;
+        usage: CustomAgentUsage;
+        readAt: number;
+      }
+  >();
+  readonly #copilotQuotaReads = new Set<{ abort: () => void; done: Promise<void> }>();
+  #copilotUsageCacheVersion = 0;
   /** One usage read at a time, so that a second request does not send the prompts again. */
   readonly #customAgentUsageLock = Semaphore.makeUnsafe(1);
   #idleCheck: NodeJS.Timeout | null = null;
@@ -1199,55 +1225,266 @@ export class ProviderRuntime implements ProviderPort {
   readonly #readCustomAgentUsage = Effect.fn("ProviderRuntime.readCustomAgentUsage")(function* (
     this: ProviderRuntime,
   ): Effect.fn.Return<CustomAgentUsage[]> {
-    const agents = savedCustomAgents(this.#credentials).flatMap((agent) =>
-      agent.usagePrompt === null ? [] : [{ id: agent.id, prompt: agent.usagePrompt }],
-    );
+    const disposals = this.#disposals;
+    const cacheVersion = this.#copilotUsageCacheVersion;
+    const stopped = () => this.#hooks.isStopping() || disposals !== this.#disposals;
+    if (stopped()) return [];
+    type UsageReadCandidate = {
+      id: string;
+      command: string;
+      args: readonly string[];
+      env: readonly { readonly name: string; readonly value: string }[];
+      usagePrompt: string | null;
+      settingsFingerprint: string;
+    };
+    type PromptUsageRead = { kind: "prompt"; id: string; prompt: string };
+    type CopilotUsageRead = {
+      kind: "copilot";
+      id: string;
+      command: string;
+      args: readonly string[];
+      env: readonly { readonly name: string; readonly value: string }[];
+      settingsFingerprint: string;
+    };
+    type UsageRead = PromptUsageRead | CopilotUsageRead;
+
+    const candidates: UsageReadCandidate[] = savedCustomAgents(this.#credentials).map((agent) => ({
+      id: agent.id,
+      command: agent.command,
+      args: agent.args,
+      env: agent.env,
+      usagePrompt: agent.usagePrompt,
+      settingsFingerprint: copilotUsageSettingsFingerprint(agent),
+    }));
     for (const id of this.#customAgentUsage.keys())
-      if (!agents.some((agent) => agent.id === id)) this.#customAgentUsage.delete(id);
-    if (agents.length === 0 || this.#off.has("acp")) return [];
+      if (!candidates.some((agent) => agent.id === id)) this.#customAgentUsage.delete(id);
+    if (candidates.length === 0 || this.#off.has("acp")) return [];
+    const resolved = yield* Effect.forEach(candidates, (agent) =>
+      Effect.suspend(() => {
+        if (isCopilotCommand(agent.command))
+          return Effect.succeed<UsageRead[]>([
+            {
+              kind: "copilot",
+              id: agent.id,
+              command: agent.command,
+              args: agent.args,
+              env: agent.env,
+              settingsFingerprint: agent.settingsFingerprint,
+            },
+          ]);
+        return resolveAgentCommand(agent.command).pipe(
+          Effect.map((executable): UsageRead[] =>
+            executable && isCopilotCommand(agent.command, executable)
+              ? [
+                  {
+                    kind: "copilot",
+                    id: agent.id,
+                    command: agent.command,
+                    args: agent.args,
+                    env: agent.env,
+                    settingsFingerprint: agent.settingsFingerprint,
+                  },
+                ]
+              : agent.usagePrompt !== null
+                ? [{ kind: "prompt", id: agent.id, prompt: agent.usagePrompt }]
+                : [],
+          ),
+          Effect.catch(() =>
+            Effect.succeed<UsageRead[]>(
+              agent.usagePrompt !== null ? [{ kind: "prompt", id: agent.id, prompt: agent.usagePrompt }] : [],
+            ),
+          ),
+        );
+      }),
+    ).pipe(Effect.map((items) => items.flat()));
+    if (stopped() || cacheVersion !== this.#copilotUsageCacheVersion) return [];
+    const agents: UsageRead[] = resolved;
+    if (agents.length === 0) return [];
     const kept = (): CustomAgentUsage[] =>
-      agents.flatMap(({ id }) => {
-        const text = this.#customAgentUsage.get(id)?.text;
-        return text == null ? [] : [{ id, text }];
+      agents.flatMap((agent) => {
+        const entry = this.#customAgentUsage.get(agent.id);
+        if (!entry) return [];
+        if (entry.kind === "copilot") return [structuredClone(entry.usage)];
+        return entry.text == null ? [] : [{ id: agent.id, text: entry.text }];
       });
-    const readWithin = (ms: number) =>
-      agents.every(({ id, prompt }) => {
-        const entry = this.#customAgentUsage.get(id);
-        return entry !== undefined && entry.prompt === prompt && Date.now() - entry.readAt < ms;
+    const promptReadWithin = (ms: number) =>
+      agents.every((agent) => {
+        if (agent.kind !== "prompt") return true;
+        const entry = this.#customAgentUsage.get(agent.id);
+        return (
+          entry !== undefined &&
+          entry.kind === "prompt" &&
+          entry.prompt === agent.prompt &&
+          Date.now() - entry.readAt < ms
+        );
       });
-    if (readWithin(CUSTOM_AGENT_USAGE_REUSE_MS)) return kept();
-    if (this.#released.has("acp") && readWithin(CUSTOM_AGENT_USAGE_WAKE_MS)) return kept();
-    if (!this.#clients.has("acp")) yield* this.ensureProvider("acp").pipe(this.#logUsageFailure("acp"));
+    const copilotReadWithin = () =>
+      agents.every((agent) => {
+        if (agent.kind !== "copilot") return true;
+        const entry = this.#customAgentUsage.get(agent.id);
+        return (
+          entry !== undefined &&
+          entry.kind === "copilot" &&
+          entry.settingsFingerprint === agent.settingsFingerprint &&
+          entry.cacheVersion === this.#copilotUsageCacheVersion &&
+          Date.now() - entry.readAt < COPILOT_USAGE_CACHE_MS
+        );
+      });
+    if (promptReadWithin(CUSTOM_AGENT_USAGE_REUSE_MS) && copilotReadWithin()) return kept();
+    if (this.#released.has("acp") && promptReadWithin(CUSTOM_AGENT_USAGE_WAKE_MS) && copilotReadWithin()) return kept();
+    const launchPath = yield* agentLaunchPath().pipe(Effect.catch(() => Effect.succeed(null)));
+    const readCopilotInFlight = new Map<string, Promise<{ quota: CustomAgentQuota; text: string | null }>>();
+    if (stopped() || cacheVersion !== this.#copilotUsageCacheVersion) return [];
+    if (agents.some((agent) => agent.kind === "prompt") && !this.#clients.has("acp"))
+      yield* this.ensureProvider("acp").pipe(this.#logUsageFailure("acp"));
     const client = this.#clients.get("acp");
     const readUsageText = client?.readUsageText?.bind(client);
-    if (!readUsageText) return kept();
     yield* Effect.forEach(
       agents,
-      ({ id, prompt }) =>
-        readUsageText(`${id}/${CUSTOM_AGENT_DEFAULT_MODEL}`, prompt).pipe(
-          toProviderOperationFailed,
-          Effect.timeoutOrElse({
-            duration: ACCOUNT_USAGE_READ_TIMEOUT_MS,
-            orElse: () => Effect.fail(new ProviderOperationFailed({ cause: new Error("Usage read timed out.") })),
-          }),
-          Effect.map((answer) => answer?.slice(0, CUSTOM_AGENT_LIMITS.usageAnswer) ?? null),
-          Effect.catch((error: ProviderOperationFailed) =>
-            Effect.sync(() => {
-              logger.warn("Could not read custom agent usage.", {
-                provider: "acp",
-                message: error.cause instanceof Error ? this.#redactMcp(error.cause.message) : "unknown",
-              });
-              // A failed read keeps the last answer to the same prompt on the rail.
-              const previous = this.#customAgentUsage.get(id);
-              return previous?.prompt === prompt ? previous.text : null;
-            }),
-          ),
-          Effect.tap((text) =>
-            Effect.sync(() => {
-              this.#customAgentUsage.set(id, { prompt, text, readAt: Date.now() });
-            }),
-          ),
-        ),
+      (agent) =>
+        agent.kind === "prompt"
+          ? Effect.suspend(() => {
+              const entry = this.#customAgentUsage.get(agent.id);
+              if (
+                entry &&
+                entry.kind === "prompt" &&
+                entry.prompt === agent.prompt &&
+                Date.now() - entry.readAt <
+                  (this.#released.has("acp") ? CUSTOM_AGENT_USAGE_WAKE_MS : CUSTOM_AGENT_USAGE_REUSE_MS)
+              )
+                return Effect.void;
+              if (!readUsageText) return Effect.void;
+              return readUsageText(`${agent.id}/${CUSTOM_AGENT_DEFAULT_MODEL}`, agent.prompt).pipe(
+                toProviderOperationFailed,
+                Effect.timeoutOrElse({
+                  duration: ACCOUNT_USAGE_READ_TIMEOUT_MS,
+                  orElse: () => Effect.fail(new ProviderOperationFailed({ cause: new Error("Usage read timed out.") })),
+                }),
+                Effect.map((answer) => answer?.slice(0, CUSTOM_AGENT_LIMITS.usageAnswer) ?? null),
+                Effect.catch((error: ProviderOperationFailed) =>
+                  Effect.sync(() => {
+                    logger.warn("Could not read custom agent usage.", {
+                      provider: "acp",
+                      message: error.cause instanceof Error ? this.#redactMcp(error.cause.message) : "unknown",
+                    });
+                    // A failed read keeps the last answer to the same prompt on the rail.
+                    const previous = this.#customAgentUsage.get(agent.id);
+                    return previous?.kind === "prompt" && previous.prompt === agent.prompt ? previous.text : null;
+                  }),
+                ),
+                Effect.tap((text) =>
+                  Effect.sync(() => {
+                    this.#customAgentUsage.set(agent.id, {
+                      kind: "prompt",
+                      prompt: agent.prompt,
+                      text,
+                      readAt: Date.now(),
+                    });
+                  }),
+                ),
+                Effect.asVoid,
+              );
+            })
+          : Effect.tryPromise({
+              try: async (signal) => {
+                const env = Object.fromEntries(agent.env.map((pair) => [pair.name, pair.value]));
+                const inherited = { ...process.env, ...(launchPath ? { PATH: launchPath } : {}), ...env };
+                const safeAgentEnvironment = Object.fromEntries(
+                  Object.entries(this.#credentials.agentEnvironment?.(inherited) ?? {}).filter(
+                    ([name]) => name.startsWith("GIT_CONFIG_") || !(name in env),
+                  ),
+                );
+                const executable = await Effect.runPromise(
+                  resolveAgentCommand(agent.command).pipe(Effect.catch(() => Effect.succeed(null))),
+                );
+                if (signal.aborted || stopped() || cacheVersion !== this.#copilotUsageCacheVersion) return;
+                if (!executable) {
+                  this.#customAgentUsage.set(agent.id, {
+                    kind: "copilot",
+                    identity: quotaIdentity({
+                      command: agent.command,
+                      executable: agent.command,
+                      args: agent.args,
+                      env: { ...env, ...safeAgentEnvironment },
+                      launchPath,
+                    }),
+                    settingsFingerprint: agent.settingsFingerprint,
+                    cacheVersion,
+                    usage: { id: agent.id, text: "", quota: { state: "no-data" } },
+                    readAt: Date.now(),
+                  });
+                  return;
+                }
+                if (!isCopilotCommand(agent.command, executable)) return;
+                const identity = quotaIdentity({
+                  command: agent.command,
+                  executable,
+                  args: agent.args,
+                  env: { ...env, ...safeAgentEnvironment },
+                  launchPath,
+                });
+                const cached = this.#customAgentUsage.get(agent.id);
+                if (
+                  cached &&
+                  cached.kind === "copilot" &&
+                  cached.identity === identity &&
+                  cached.settingsFingerprint === agent.settingsFingerprint &&
+                  cached.cacheVersion === this.#copilotUsageCacheVersion &&
+                  Date.now() - cached.readAt < COPILOT_USAGE_CACHE_MS
+                )
+                  return;
+                let pending = readCopilotInFlight.get(identity);
+                if (!pending) {
+                  const controller = new AbortController();
+                  const onAbort = () => controller.abort(signal.reason);
+                  signal.addEventListener("abort", onAbort, { once: true });
+                  const tracker: { abort: () => void; done: Promise<void> } = {
+                    abort: () => controller.abort(new DOMException("Aborted", "AbortError")),
+                    done: Promise.resolve(),
+                  };
+                  if (signal.aborted || stopped()) {
+                    signal.removeEventListener("abort", onAbort);
+                    tracker.abort();
+                    return;
+                  }
+                  this.#copilotQuotaReads.add(tracker);
+                  pending = readCopilotQuota({
+                    executable,
+                    args: agent.args,
+                    env: { ...env, ...safeAgentEnvironment },
+                    launchPath,
+                    timeoutMs: ACCOUNT_USAGE_READ_TIMEOUT_MS,
+                    signal: controller.signal,
+                  });
+                  tracker.done = pending.then(
+                    () => {
+                      signal.removeEventListener("abort", onAbort);
+                      this.#copilotQuotaReads.delete(tracker);
+                      return;
+                    },
+                    () => {
+                      signal.removeEventListener("abort", onAbort);
+                      this.#copilotQuotaReads.delete(tracker);
+                      return;
+                    },
+                  );
+                  readCopilotInFlight.set(identity, pending);
+                }
+                const read = await pending;
+                if (signal.aborted || stopped() || cacheVersion !== this.#copilotUsageCacheVersion) return;
+                if (read.quota.state === "error") logger.warn("Could not read Copilot quota.");
+                const text = read.text ?? "";
+                this.#customAgentUsage.set(agent.id, {
+                  kind: "copilot",
+                  settingsFingerprint: agent.settingsFingerprint,
+                  cacheVersion,
+                  identity,
+                  usage: { id: agent.id, text: text.slice(0, CUSTOM_AGENT_LIMITS.usageAnswer), quota: read.quota },
+                  readAt: Date.now(),
+                });
+              },
+              catch: (cause) => new ProviderOperationFailed({ cause }),
+            }).pipe(Effect.catch(() => Effect.void)),
       { concurrency: "unbounded", discard: true },
     );
     return kept();
@@ -1272,6 +1509,11 @@ export class ProviderRuntime implements ProviderPort {
     this.#usageGate(provider).reset();
     this.#lastUsage.delete(provider);
     this.#ownResetCredits.delete(provider);
+    if (provider === "acp") this.#invalidateCopilotUsageCache();
+  }
+
+  #invalidateCopilotUsageCache(): void {
+    this.#copilotUsageCacheVersion += 1;
   }
 
   #usageGate(provider: AgentProvider): UsageReadGate {
@@ -1962,6 +2204,7 @@ export class ProviderRuntime implements ProviderPort {
     this: ProviderRuntime,
     provider: AgentProvider,
   ) {
+    if (provider === "acp") this.#invalidateCopilotUsageCache();
     if (this.#off.has(provider)) return;
     this.#environmentReloadPending.delete(provider);
     if (!this.#clients.has(provider)) return;
@@ -1983,6 +2226,7 @@ export class ProviderRuntime implements ProviderPort {
    */
 
   readonly reloadCustomAgents = Effect.fn("ProviderRuntime.reloadCustomAgents")(function* (this: ProviderRuntime) {
+    this.#invalidateCopilotUsageCache();
     this.#customAgentsReloadPending = false;
     const result = yield* this.#reloadCustomAgents();
     if (result === "skipped-busy") this.#customAgentsReloadPending = true;
@@ -2666,6 +2910,14 @@ export class ProviderRuntime implements ProviderPort {
    */
   readonly dispose = Effect.fn("ProviderRuntime.dispose")(function* (this: ProviderRuntime) {
     this.#disposals += 1;
+    this.#invalidateCopilotUsageCache();
+    const copilotReads = [...this.#copilotQuotaReads];
+    for (const read of copilotReads) read.abort();
+    if (copilotReads.length > 0)
+      yield* Effect.tryPromise({
+        try: () => Promise.allSettled(copilotReads.map((read) => read.done)).then(() => undefined),
+        catch: (cause) => new ProviderOperationFailed({ cause }),
+      }).pipe(Effect.ignore);
     for (const timer of this.#restartTimers.values()) clearTimeout(timer);
     this.#restartTimers.clear();
     for (const timer of this.#restartsWhenIdle.values()) if (timer) clearTimeout(timer);

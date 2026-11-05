@@ -3,20 +3,37 @@
 Date: 2026-11-04. Base: local `as-bot`, `297d7f2a9`.
 Work branch: `feat/copilot-rail-quota`.
 
-## Decision
+## Decision (updated with user contract)
 
-Stop at Phase 1. Do not change the rail icon or implement a quota ring in this
-change. The user required a stop when no verified source can supply real quota.
+Phase 2 is now implemented across backend adapter, preload/runtime contracts,
+renderer/UI, i18n, and docs with the user-supplied billing contract. The
+original probe findings stay preserved below as provenance.
 
-An official SDK method returns account quota counters and a percentage. Thus,
-account quota access is not wholly absent. However, the available documentation
-does not establish the units of those counters for this enterprise AI-credit
-plan. The reported reset date is already in the past. Do not label the counters
-as premium requests or AI credits, and do not present that date as the next reset.
-This is a data-contract gap, not proof that enterprise quota is inaccessible.
+Resolved source of truth for this implementation is the user's explicit contract:
 
-No application code, dependency, locale, credential handling, or profile path
-changed. The existing terminal icon and neutral no-data state stay in place.
+> "1 crédito de Copilot = US$0.01. El presupuesto empresarial de John Deere es aparte (tiers hasta US$2,500, reset el día 1 mensualmente) y se comparte con tu trabajo."
+
+This is treated as USER-SUPPLIED product contract, not as official vendor
+documentation. Current implementation now:
+
+- uses official SDK RPC quota counters only (`entitlementRequests`, `usedRequests`,
+  `overage`) and maps them to rail credits (`entitlementCredits`, `usedCredits`,
+  `overageCredits`) without inferring from percentages;
+- computes used percent from counters (`usedCredits / entitlementCredits`);
+- refreshes quota every five minutes and accepts dynamic external budget updates;
+- keeps runtime free of tier constants (budget amounts are external/user-managed;
+  user starts on Standard monthly);
+- pins adapter reads to `protocolVersion === 3`; on future mismatch or missing
+  payload it returns safe `no-data` instead of stale success;
+- includes timeout and logging safety around quota polling failures;
+- uses SDK future reset date when valid;
+- falls back to estimated monthly day-1 renewal when reset is missing/past, while
+  keeping provider-reported timestamps as authoritative when present;
+- keeps no-data/error neutral/error states without stale success ring;
+- keeps the exact shared-note copy requested by the user:
+  `Shared budget (HIVE and work)`.
+
+## Original Phase 1 investigation notes (preserved)
 
 ## Local checks and actual output
 
@@ -165,8 +182,9 @@ behavior are known for that agent.
    [framing](https://github.com/github/copilot-sdk/blob/9bc718cb608c4cd3b63e0e71c637dcf1ebfd5409/go/internal/jsonrpc2/frame.go#L49-L91),
    and [quota result schema](https://github.com/github/copilot-sdk/blob/9bc718cb608c4cd3b63e0e71c637dcf1ebfd5409/nodejs/src/generated/rpc.ts#L8116-L8164):
    the transport and method have official source evidence, but the quota
-   surface is experimental. The SDK also negotiates connection/protocol state;
-   this minimal diagnostic probe is not a production client implementation.
+   surface is experimental. The original probe above was diagnostic-only; the
+   current branch now uses this official experimental RPC in production code
+   with protocol pinning and safe fallback behavior.
 9. [Personal usage monitoring](https://github.com/github/docs/blob/main/content/copilot/how-tos/manage-and-track-spending/monitor-ai-usage.md#L15-L22):
    Business and Enterprise users can view individual AI-credit consumption
    in personal Copilot settings.
@@ -175,15 +193,13 @@ behavior are known for that agent.
     permissions do not prove access to an enterprise-funded seat's allowance.
     No REST billing request was attempted.
 
-## Options and next gate
+## Remaining open contract questions
 
 1. Ask GitHub for the documented enterprise meaning of these quota counters
-   and the stale `resetDate`. Include the CLI version and sanitized values.
-2. Use personal Copilot settings for the current supported AI-credit view.
-3. Authorize a separate icon-only task. That does not depend on quota data.
-4. Resume the quota feature only after the unit and reset contract is verified.
-   A future adapter must reject invalid readings, keep the neutral/error states,
-   distinguish credits from requests, and avoid model prompts.
+   and the stale `resetDate`. Include CLI version and sanitized values.
+2. Treat request→credit conversion as USER-SUPPLIED mapping only until GitHub
+   publishes official enterprise billing-unit documentation.
+3. Keep personal Copilot settings and admin billing reports as external checks.
 
 No private GitHub endpoint, `gh api`, GitHub write operation, fetch, reset, push,
 PR, or merge was used. The dev stack and `%APPDATA%\OpenBot` were not touched.
@@ -192,8 +208,23 @@ ACP command reported 0 AI Credits. This investigation did not poll either source
 
 ## Verification scope
 
-Only this Markdown report is tracked. There are no touched code tests, UI changes,
-or new locale keys. File-scoped code lint and touched-test runs are not applicable.
-The requested node typecheck, renderer typecheck, and `i18n:check` are run
-sequentially; their final result is recorded in the task handoff.
-Broad lint, builds, full tests, and browser checks are not part of this phase.
+This report documents both preserved probe provenance and the current production
+integration choice (official experimental SDK RPC + safeguards). Code/test
+verification for implementation files is tracked in the task handoff.
+
+The six affected test files passed (148 tests). Node and renderer typechecks,
+`i18n:check`, file-scoped Biome, and whitespace checks passed. Biome retains
+three dependency-injection warnings in the new runtime regression test: the
+test replaces module-level command resolution, launch-path lookup, and quota
+reads because the runtime has no injectable seam for those operations.
+No lint suppression or production-only test hook was added.
+
+Architecture review approved the integrated changes after cache-generation,
+shutdown-race, counter-authority, and date-format corrections. The day-1 estimate
+has a real-format regression for `America/Mexico_City`.
+
+Live browser verification is blocked: `bun run dev:automation instances` could
+not read permissions on the dev-instance registry. No screenshot was captured,
+no permissions were changed, and the running dev stack was not stopped.
+The logo, ring, and popover still need a live visual check when registry access
+is available. No claim of live visual approval is made.

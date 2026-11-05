@@ -51,6 +51,7 @@ const customAgentUsage: CustomAgentUsageRailRow[] = [
   {
     id: "devin",
     name: "Devin",
+    providerLogo: "acp",
     usageText: "Plan: Team\nACUs used this cycle: 42 of 250\nThe cycle resets in 12 days.",
   },
 ];
@@ -59,10 +60,29 @@ const customAgentsMixedUsage: CustomAgentUsageRailRow[] = [
   {
     id: "devin",
     name: "Devin",
+    providerLogo: "acp",
     usageText: "Plan: Team\nACUs used this cycle: 42 of 250\nThe cycle resets in 12 days.",
   },
-  { id: "copilot-local", name: "Copilot" },
-  { id: "copilot-experimental", name: "Copilot Experimental" },
+  {
+    id: "copilot-local",
+    name: "Copilot",
+    providerLogo: "copilot",
+    quota: {
+      state: "ready",
+      usedPercent: 1.7,
+      ringPercent: 1.7,
+      tone: "neutral",
+      usedCredits: 4250,
+      entitlementCredits: 250000,
+      overageCredits: 0,
+      usedUsd: 42.5,
+      entitlementUsd: 2500,
+      overageUsd: 0,
+      resetAtMs: Date.now() + 22 * 86_400_000,
+      resetEstimated: false,
+    },
+  },
+  { id: "copilot-experimental", name: "Copilot Experimental", providerLogo: "copilot", quota: { state: "no-data" } },
 ];
 
 /** The page rail as the desktop window shows it. Hover a button, or move to it with Tab, to see its tooltip. */

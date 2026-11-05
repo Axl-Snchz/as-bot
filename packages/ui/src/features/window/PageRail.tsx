@@ -1,4 +1,5 @@
 import { AppLogo, type AppLogoVariant, ProviderLogo } from "@openbot/brand";
+import type { CustomAgentQuotaError } from "@openbot/contracts/ipc";
 import {
   Bot,
   Button,
@@ -15,7 +16,11 @@ import {
   Workflow,
 } from "@openbot/ui";
 import { AccountUsageDetails } from "@openbot/ui/features/account/AccountUsageDetails";
-import { type AccountUsageProviderRow, accountUsageRowKey } from "@openbot/ui/features/account/account-usage-view";
+import {
+  type AccountUsageProviderRow,
+  type AccountUsageTone,
+  accountUsageRowKey,
+} from "@openbot/ui/features/account/account-usage-view";
 import { useText } from "@openbot/ui/text";
 import { Dynamic, type JSX } from "@solidjs/web";
 import { createMemo, createSignal, For, Show } from "solid-js";
@@ -62,6 +67,46 @@ function RailButton(props: {
 /** Two tracks in a 34px box, with 4.5px between their centers. */
 const RING = { size: 34, stroke: 2.25, spacing: 4.5 };
 
+interface UsageRingTrack {
+  percent: number;
+  tone: AccountUsageTone;
+}
+
+/** Shared rail ring drawing for provider usage windows and custom-agent quota usage. */
+function UsageRingIcon(props: { tracks: readonly UsageRingTrack[] }) {
+  const outerRadius = (RING.size - RING.stroke) / 2;
+  return (
+    <svg class="window-rail-usage-ring" viewBox={`0 0 ${RING.size} ${RING.size}`} fill="none" aria-hidden="true">
+      <For each={props.tracks} keyed={false}>
+        {(track, index) => (
+          <g>
+            <circle
+              class="window-rail-usage-track"
+              cx={RING.size / 2}
+              cy={RING.size / 2}
+              r={outerRadius - index * RING.spacing}
+              stroke-width={RING.stroke}
+            />
+            <Show when={track().percent > 0}>
+              <circle
+                class="window-rail-usage-arc"
+                data-usage-tone={track().tone}
+                cx={RING.size / 2}
+                cy={RING.size / 2}
+                r={outerRadius - index * RING.spacing}
+                stroke-width={RING.stroke}
+                stroke-linecap="round"
+                pathLength={100}
+                stroke-dasharray={`${track().percent} 100`}
+              />
+            </Show>
+          </g>
+        )}
+      </For>
+    </svg>
+  );
+}
+
 /**
  * The limits of one provider as concentric rings: the outer ring is the longest window, the inner
  * ring the shortest. Each arc shows how much is left, in the tone of that window. The hover card
@@ -87,7 +132,6 @@ function UsageRings(props: {
   const ringRow = () =>
     rows().reduce((lowest, row) => ((row.remainingPercent ?? 100) < (lowest.remainingPercent ?? 100) ? row : lowest));
   const windows = () => [...ringRow().ringWindows].reverse().slice(0, 2);
-  const outerRadius = (RING.size - RING.stroke) / 2;
   return (
     <RailButton
       label={label()}
@@ -105,66 +149,135 @@ function UsageRings(props: {
       class="window-rail-usage"
       onClick={props.onOpen}
     >
-      <svg class="window-rail-usage-ring" viewBox={`0 0 ${RING.size} ${RING.size}`} fill="none" aria-hidden="true">
-        <For each={windows()} keyed={false}>
-          {(window, index) => (
-            <g>
-              <circle
-                class="window-rail-usage-track"
-                cx={RING.size / 2}
-                cy={RING.size / 2}
-                r={outerRadius - index * RING.spacing}
-                stroke-width={RING.stroke}
-              />
-              <Show when={window().remainingPercent > 0}>
-                <circle
-                  class="window-rail-usage-arc"
-                  data-usage-tone={window().tone}
-                  cx={RING.size / 2}
-                  cy={RING.size / 2}
-                  r={outerRadius - index * RING.spacing}
-                  stroke-width={RING.stroke}
-                  stroke-linecap="round"
-                  pathLength={100}
-                  stroke-dasharray={`${window().remainingPercent} 100`}
-                />
-              </Show>
-            </g>
-          )}
-        </For>
-      </svg>
+      <UsageRingIcon tracks={windows().map((window) => ({ percent: window.remainingPercent, tone: window.tone }))} />
       <ProviderLogo provider={props.row.provider} class="window-rail-usage-logo" />
     </RailButton>
   );
 }
 
-/** One saved custom agent row for rail usage. OpenBot cannot read a percent from its usage answer. */
+interface CustomAgentUsageQuotaReady {
+  state: "ready";
+  usedPercent: number;
+  ringPercent: number;
+  tone: AccountUsageTone;
+  usedCredits: number;
+  entitlementCredits: number;
+  overageCredits: number;
+  usedUsd: number;
+  entitlementUsd: number;
+  overageUsd: number;
+  resetAtMs: number;
+  resetEstimated: boolean;
+}
+
+type CustomAgentUsageQuota =
+  | CustomAgentUsageQuotaReady
+  | { state: "no-data" }
+  | { state: "error"; messageKey: CustomAgentQuotaError["messageKey"] };
+
+/** One saved custom agent row for rail usage. */
 export interface CustomAgentUsageRailRow {
   id: string;
   name: string;
+  providerLogo: "acp" | "copilot";
   /** The last answer to the usage prompt. Missing when there is no prompt or no answer yet. */
   usageText?: string | undefined;
+  quota?: CustomAgentUsageQuota | undefined;
 }
 
 /**
- * One saved custom agent in the rail: neutral ACP logo, with no ring. The hover card shows either the
- * last answer as written by the agent, or "No usage data" while no answer exists.
+ * One saved custom agent in the rail. Copilot quota uses the same ring treatment as built-in providers,
+ * with used percentage from credits counters.
  */
 function CustomAgentUsageButton(props: { row: CustomAgentUsageRailRow; onOpen: (button: HTMLElement) => void }) {
-  const { t } = useText();
-  return (
-    <RailButton
-      label={t("app.rail.customAgentUsage", { name: props.row.name })}
-      card={() => (
+  const { t, format } = useText();
+  const readyQuota = () => (props.row.quota?.state === "ready" ? props.row.quota : null);
+  const usageLabel = () => {
+    const quota = readyQuota();
+    if (!quota) return t("app.rail.customAgentUsage", { name: props.row.name });
+    return t("app.rail.customAgentUsagePercent", {
+      name: props.row.name,
+      percent: format.number(quota.usedPercent, { maximumFractionDigits: 1 }),
+    });
+  };
+  const resetLabel = () => {
+    const quota = readyQuota();
+    if (!quota) return "";
+    const resetDate = format.date(new Date(quota.resetAtMs), { month: "short", day: "numeric" });
+    if (quota.resetEstimated) return t("app.rail.customAgentRenewsEstimated", { date: resetDate });
+    return t("account.usage.resetsAt", { time: resetDate });
+  };
+  const card = () => {
+    const quota = readyQuota();
+    if (props.row.quota?.state === "error")
+      return (
         <div class="window-rail-agent-usage">
           <h2 class="account-usage-popover-title">{props.row.name}</h2>
-          <p class="window-rail-agent-usage-text">{props.row.usageText ?? t("app.rail.customAgentNoUsage")}</p>
+          <p class="account-usage-popover-error">{t(props.row.quota.messageKey)}</p>
         </div>
-      )}
-      class="window-rail-usage"
-      onClick={props.onOpen}
-    >
-      <ProviderLogo provider="acp" class="window-rail-usage-logo window-rail-agent-usage-logo" />
+      );
+    if (quota) {
+      return (
+        <div class="window-rail-agent-usage">
+          <h2 class="account-usage-popover-title">{props.row.name}</h2>
+          <div class="account-usage-window window-rail-agent-usage-window" data-usage-tone={quota.tone}>
+            <span class="account-usage-window-label">{t("app.rail.customAgentCredits")}</span>
+            <span class="account-usage-window-bar" aria-hidden="true">
+              <span class="account-usage-window-fill" style={{ "inline-size": `${quota.ringPercent}%` }} />
+            </span>
+            <strong class="account-usage-window-remaining">{format.percent(quota.usedPercent / 100)}</strong>
+            <span class="account-usage-window-reset">{resetLabel()}</span>
+          </div>
+          <p class="window-rail-agent-usage-metric">
+            {t("app.rail.customAgentCreditsAmount", {
+              used: format.number(quota.usedCredits),
+              entitlement: format.number(quota.entitlementCredits),
+            })}
+          </p>
+          <p class="window-rail-agent-usage-metric">
+            {t("app.rail.customAgentCreditsUsd", {
+              used: format.currencyUsd(quota.usedUsd),
+              entitlement: format.currencyUsd(quota.entitlementUsd),
+            })}
+          </p>
+          <Show when={quota.overageCredits > 0}>
+            <p class="window-rail-agent-usage-metric window-rail-agent-usage-overage">
+              {t("app.rail.customAgentOverage", {
+                credits: format.number(quota.overageCredits),
+                usd: format.currencyUsd(quota.overageUsd),
+              })}
+            </p>
+          </Show>
+          <p class="window-rail-agent-usage-note">{t("app.rail.customAgentSharedBudget")}</p>
+        </div>
+      );
+    }
+    return (
+      <div class="window-rail-agent-usage">
+        <h2 class="account-usage-popover-title">{props.row.name}</h2>
+        <p class="window-rail-agent-usage-text">
+          {props.row.quota?.state === "no-data"
+            ? t("app.rail.customAgentNoUsage")
+            : (props.row.usageText ?? t("app.rail.customAgentNoUsage"))}
+        </p>
+      </div>
+    );
+  };
+  return (
+    <RailButton label={usageLabel()} card={card} class="window-rail-usage" onClick={props.onOpen}>
+      <Show
+        when={readyQuota()}
+        fallback={
+          <ProviderLogo provider={props.row.providerLogo} class="window-rail-usage-logo window-rail-agent-usage-logo" />
+        }
+      >
+        {(quota) => (
+          <>
+            <UsageRingIcon tracks={[{ percent: quota().ringPercent, tone: quota().tone }]} />
+            <ProviderLogo provider={props.row.providerLogo} class="window-rail-usage-logo" />
+          </>
+        )}
+      </Show>
     </RailButton>
   );
 }

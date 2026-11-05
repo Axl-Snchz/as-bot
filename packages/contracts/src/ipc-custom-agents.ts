@@ -7,7 +7,7 @@
 
 import { isCustomAgentId, isNewCustomAgentId } from "./agent-providers";
 import { INPUT_LIMITS } from "./input-limits";
-import { isBoundedString, isNullableBoundedString } from "./ipc-bounded-values";
+import { isBoundedString, isFiniteNumber, isNullableBoundedString } from "./ipc-bounded-values";
 import { CUSTOM_PROVIDER_RESTARTS, type CustomProviderRestart } from "./ipc-custom-providers";
 import { isDynamicRecord, isOneOf, isString } from "./runtime-values";
 
@@ -75,7 +75,31 @@ export interface CustomAgentSummary {
 export interface CustomAgentUsage {
   id: string;
   text: string;
+  quota?: CustomAgentQuota | undefined;
 }
+
+export interface CustomAgentQuotaReady {
+  state: "ready";
+  entitlementCredits: number;
+  /** Credits used as reported by SDK usedRequests; overage is reported separately. */
+  usedCredits: number;
+  /** Additional usage charged after entitlement exhaustion. */
+  overageCredits: number;
+  remainingCredits: number;
+  remainingPercentage: number;
+  /** Null or absent means the CLI did not report a usable reset date. */
+  resetDate?: string | null | undefined;
+  /** Business rule for this custom contract: one Copilot credit equals one cent in USD. */
+  creditUsd: number;
+}
+
+export interface CustomAgentQuotaError {
+  state: "error";
+  /** Existing source key that the renderer can localize. */
+  messageKey: "account.usage.value.unavailable";
+}
+
+export type CustomAgentQuota = CustomAgentQuotaReady | { state: "no-data" } | CustomAgentQuotaError;
 
 export interface CustomAgentResult {
   agents: CustomAgentSummary[];
@@ -167,7 +191,41 @@ export function isCustomAgentUsage(value: unknown): value is CustomAgentUsage {
     isDynamicRecord(value) &&
     isString(value.id) &&
     isCustomAgentId(value.id) &&
-    isBoundedString(value.text, CUSTOM_AGENT_LIMITS.usageAnswer)
+    isBoundedString(value.text, CUSTOM_AGENT_LIMITS.usageAnswer) &&
+    (value.quota === undefined || isCustomAgentQuota(value.quota))
+  );
+}
+
+function isCustomAgentQuotaReady(value: unknown): value is CustomAgentQuotaReady {
+  return (
+    isDynamicRecord(value) &&
+    value.state === "ready" &&
+    isFiniteNumber(value.entitlementCredits) &&
+    value.entitlementCredits >= 0 &&
+    isFiniteNumber(value.usedCredits) &&
+    value.usedCredits >= 0 &&
+    isFiniteNumber(value.overageCredits) &&
+    value.overageCredits >= 0 &&
+    isFiniteNumber(value.remainingCredits) &&
+    value.remainingCredits >= 0 &&
+    isFiniteNumber(value.remainingPercentage) &&
+    (value.resetDate === undefined ||
+      value.resetDate === null ||
+      (isBoundedString(value.resetDate, 80) && !/[\0\r\n]/.test(value.resetDate))) &&
+    isFiniteNumber(value.creditUsd) &&
+    value.creditUsd > 0
+  );
+}
+
+function isCustomAgentQuotaError(value: unknown): value is CustomAgentQuotaError {
+  return isDynamicRecord(value) && value.state === "error" && value.messageKey === "account.usage.value.unavailable";
+}
+
+export function isCustomAgentQuota(value: unknown): value is CustomAgentQuota {
+  return (
+    (isDynamicRecord(value) && value.state === "no-data") ||
+    isCustomAgentQuotaReady(value) ||
+    isCustomAgentQuotaError(value)
   );
 }
 
