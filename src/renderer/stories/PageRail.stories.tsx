@@ -1,3 +1,4 @@
+import type { CustomAgentSummary, CustomAgentUsage as CustomAgentUsageState } from "@openbot/contracts/ipc";
 import { accountUsageProviderRows } from "@openbot/ui/features/account/account-usage-view";
 import { HelpMenu } from "@openbot/ui/features/updates/HelpMenu";
 import {
@@ -11,6 +12,7 @@ import { useText } from "@openbot/ui/text";
 import { createSignal } from "solid-js";
 import { fn } from "storybook/test";
 import type { Meta, StoryObj } from "storybook-solidjs-vite";
+import { customAgentRailRows } from "../src/features/custom-agents/custom-agent-rail-rows";
 
 const nowSeconds = Math.floor(Date.now() / 1_000);
 
@@ -25,6 +27,21 @@ const usageRows = accountUsageProviderRows({
       id: "cursor",
       primary: { usedPercent: 37, windowDurationMins: 43_200, resetsAt: nowSeconds + 18 * 86_400 },
       secondary: { usedPercent: 82, windowDurationMins: 43_200, resetsAt: nowSeconds + 18 * 86_400 },
+    },
+  ],
+});
+
+const comparisonUsageRows = accountUsageProviderRows({
+  limits: [
+    {
+      id: "claude",
+      primary: { usedPercent: 0, windowDurationMins: 300, resetsAt: nowSeconds + 2 * 3_600 },
+      secondary: { usedPercent: 22, windowDurationMins: 10_080, resetsAt: nowSeconds + 22 * 3_600 + 51 * 60 },
+    },
+    {
+      id: "codex",
+      primary: { usedPercent: 0, windowDurationMins: 43_200, resetsAt: nowSeconds + 28 * 86_400 + 7 * 3_600 },
+      secondary: null,
     },
   ],
 });
@@ -56,34 +73,67 @@ const customAgentUsage: CustomAgentUsageRailRow[] = [
   },
 ];
 
-const customAgentsMixedUsage: CustomAgentUsageRailRow[] = [
-  {
-    id: "devin",
-    name: "Devin",
-    providerLogo: "acp",
-    usageText: "Plan: Team\nACUs used this cycle: 42 of 250\nThe cycle resets in 12 days.",
-  },
-  {
-    id: "copilot-local",
-    name: "Copilot",
-    providerLogo: "copilot",
-    quota: {
+function storyAgent(input: {
+  id: string;
+  name: string;
+  command: string;
+  usagePrompt: string | null;
+  resolvedCommand?: string | null;
+}): CustomAgentSummary {
+  return {
+    id: input.id,
+    name: input.name,
+    command: input.command,
+    args: [],
+    envNames: [],
+    usagePrompt: input.usagePrompt,
+    resolvedCommand: input.resolvedCommand ?? input.command,
+  };
+}
+
+function storyUsage(id: string, text: string, quota?: CustomAgentUsageState["quota"]): CustomAgentUsageState {
+  return { id, text, quota };
+}
+
+const customAgentsMixedUsage: CustomAgentUsageRailRow[] = customAgentRailRows(
+  [
+    storyAgent({ id: "devin", name: "Devin", command: "/tmp/devin", usagePrompt: "/usage" }),
+    storyAgent({
+      id: "copilot-local",
+      name: "Copilot",
+      command: "C:\\tools\\copilot-enterprise.cmd",
+      usagePrompt: null,
+    }),
+    storyAgent({
+      id: "copilot-experimental",
+      name: "Copilot Experimental",
+      command: "C:\\tools\\copilot-beta.exe",
+      usagePrompt: null,
+    }),
+    storyAgent({
+      id: "copilot-failing",
+      name: "Copilot Failing",
+      command: "C:\\tools\\copilot-failing.cmd",
+      usagePrompt: null,
+    }),
+  ],
+  [
+    storyUsage("devin", "Plan: Team\nACUs used this cycle: 42 of 250\nThe cycle resets in 12 days."),
+    storyUsage("copilot-local", "", {
       state: "ready",
-      usedPercent: 1.7,
-      ringPercent: 1.7,
-      tone: "neutral",
-      usedCredits: 4250,
-      entitlementCredits: 250000,
+      entitlementCredits: 250_000,
+      usedCredits: 4_250,
       overageCredits: 0,
-      usedUsd: 42.5,
-      entitlementUsd: 2500,
-      overageUsd: 0,
-      resetAtMs: Date.now() + 22 * 86_400_000,
-      resetEstimated: false,
-    },
-  },
-  { id: "copilot-experimental", name: "Copilot Experimental", providerLogo: "copilot", quota: { state: "no-data" } },
-];
+      remainingCredits: 245_750,
+      remainingPercentage: 98.3,
+      resetDate: new Date(Date.now() + (26 * 86_400 + 4 * 3_600) * 1_000).toISOString(),
+      creditUsd: 0.01,
+    }),
+    storyUsage("copilot-experimental", "", { state: "no-data" }),
+    storyUsage("copilot-failing", "", { state: "error", messageKey: "account.usage.value.unavailable" }),
+  ],
+  Date.now(),
+);
 
 /** The page rail as the desktop window shows it. Hover a button, or move to it with Tab, to see its tooltip. */
 function RailPreview(props: {
@@ -157,6 +207,13 @@ export const CustomAgentUsage: Story = {
 /** Saved custom agents always show. Missing usage answers show "No usage data". */
 export const CustomAgentsMixedUsage: Story = {
   args: { customAgentUsage: customAgentsMixedUsage },
+};
+
+export const UsageComparisonBuiltInAndCopilot: Story = {
+  args: {
+    usageRows: comparisonUsageRows,
+    customAgentUsage: customAgentsMixedUsage.filter((row) => row.id === "copilot-local"),
+  },
 };
 
 /** Grok and a merged Cursor plan share one quota, so the rail shows the Grok ring alone. */

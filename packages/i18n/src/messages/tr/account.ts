@@ -17,6 +17,7 @@ export const messages = {
   "account.usage.providers": "Sağlayıcı kullanımı",
   "account.usage.value.loading": "Yükleniyor…",
   "account.usage.value.unavailable": "Kullanılamıyor",
+  "account.usage.value.remaining": "{percent} kaldı",
   "account.usage.notReported": "Limit bildirilmedi",
   "account.usage.value.notReported": "Bildirilmedi",
   "account.usage.providerNotReported": "Kullanım verisi yok",

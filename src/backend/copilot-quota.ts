@@ -1,14 +1,18 @@
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { basename, extname } from "node:path";
-import type { CustomAgentQuota, CustomAgentQuotaReady } from "@openbot/contracts/ipc";
+import { homedir } from "node:os";
+import {
+  type CustomAgentQuota,
+  type CustomAgentQuotaReady,
+  customAgentCommandBasename,
+  isCopilotAgentCommand,
+} from "@openbot/contracts/ipc";
 import type { DynamicRecord } from "@openbot/contracts/runtime-values";
 import { isDynamicRecord } from "@openbot/contracts/runtime-values";
 import { Effect } from "effect";
 import { cliSpawnTarget } from "./cli";
 import { stopProcessTree } from "./windows-process-tree";
 
-const COPILOT_COMMANDS = new Set(["copilot", "copilot-enterprise"]);
 const DISABLE_MCP_SERVER = "--disable-mcp-server";
 const REQUIRED_FLAGS = [
   "--headless",
@@ -41,6 +45,7 @@ export interface CopilotQuotaLaunchConfig {
   args: readonly string[];
   env: Readonly<Record<string, string>>;
   launchPath: string | null;
+  cwd?: string | null;
   timeoutMs: number;
 }
 
@@ -67,16 +72,11 @@ function saltedQuotaDigest(material: string): string {
 }
 
 export function copilotCommandBasename(command: string): string {
-  const commandPath = command.replace(/\\/gu, "/");
-  const base = basename(commandPath).toLowerCase();
-  const extension = extname(base);
-  return [".exe", ".cmd", ".bat", ".com", ".ps1"].includes(extension) ? base.slice(0, -extension.length) : base;
+  return customAgentCommandBasename(command);
 }
 
 export function isCopilotCommand(command: string, executable?: string): boolean {
-  const commandName = copilotCommandBasename(command);
-  if (COPILOT_COMMANDS.has(commandName)) return true;
-  return executable ? COPILOT_COMMANDS.has(copilotCommandBasename(executable)) : false;
+  return isCopilotAgentCommand(command, executable);
 }
 
 export function sanitizeCopilotQuotaArgs(args: readonly string[]): string[] {
@@ -229,6 +229,7 @@ export async function invokeCopilotQuotaRpc(
     shell: false,
     windowsHide: true,
     windowsVerbatimArguments: rpc.windowsVerbatimArguments,
+    cwd: launch.cwd ?? homedir(),
     env: {
       ...process.env,
       ...(launch.launchPath ? { PATH: launch.launchPath } : {}),

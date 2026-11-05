@@ -16,10 +16,12 @@ Resolved source of truth for this implementation is the user's explicit contract
 This is treated as USER-SUPPLIED product contract, not as official vendor
 documentation. Current implementation now:
 
-- uses official SDK RPC quota counters only (`entitlementRequests`, `usedRequests`,
-  `overage`) and maps them to rail credits (`entitlementCredits`, `usedCredits`,
-  `overageCredits`) without inferring from percentages;
-- computes used percent from counters (`usedCredits / entitlementCredits`);
+- uses GitHub-reported limits only (`entitlementRequests`, `usedRequests`,
+  `overage`) over a locally implemented SDK RPC protocol and maps them to rail
+  credits (`entitlementCredits`, `usedCredits`, `overageCredits`) without
+  inferring from percentages;
+- computes remaining percent from counters
+  (`(1 - usedCredits / entitlementCredits) * 100`);
 - refreshes quota every five minutes and accepts dynamic external budget updates;
 - keeps runtime free of tier constants (budget amounts are external/user-managed;
   user starts on Standard monthly);
@@ -27,11 +29,19 @@ documentation. Current implementation now:
   payload it returns safe `no-data` instead of stale success;
 - includes timeout and logging safety around quota polling failures;
 - uses SDK future reset date when valid;
-- falls back to estimated monthly day-1 renewal when reset is missing/past, while
-  keeping provider-reported timestamps as authoritative when present;
+- falls back to estimated next-month day 1 at 00:00 UTC when reset is
+  missing/past, then formats that UTC timestamp in local time for display,
+  while keeping provider-reported timestamps as authoritative when present;
 - keeps no-data/error neutral/error states without stale success ring;
-- keeps the exact shared-note copy requested by the user:
-  `Shared budget (HIVE and work)`.
+- now reuses the same shared usage row UI as built-in providers (`Usage` header
+  + provider row + monthly window), and supersedes the earlier custom Copilot
+  popover rows for used credits/USD/shared-note text.
+- strengthens shared usage bar legibility in the popover (wider card, 6px bar
+  height, neutral track on `--openbot-text-readable`, neutral fill on
+  `--openbot-text-primary`) so spent vs left remains visible on dark surfaces.
+- rounds Copilot quota remaining labels to whole percentages in shared usage
+  rows/aria labels (for example `98% left` instead of `98.3% left`) while
+  keeping counter math precision unchanged.
 
 ## Original Phase 1 investigation notes (preserved)
 
@@ -208,8 +218,20 @@ ACP command reported 0 AI Credits. This investigation did not poll either source
 
 ## Verification scope
 
+Latest shared-UI follow-up: seven targeted files passed (150 tests), plus four
+new whole-percent warning-cutoff cases passed in a ten-test quota-view rerun.
+Node/renderer typechecks, `i18n:check`, 45-file scoped Biome, and whitespace
+checks passed. The same-mount regression covers no-data, ready, and error states.
+The display rounds remaining share and selects warning tone from that same
+whole percentage, as built-in providers do.
+
+Copilot now uses the actual built-in usage components, with a Monthly row and
+compact countdown. All providers show a translated percent-left value. The
+credits/USD/shared-budget rows and their unused strings were removed. The
+optional native credits/USD tooltip was not added.
+
 This report documents both preserved probe provenance and the current production
-integration choice (official experimental SDK RPC + safeguards). Code/test
+integration choice (locally implemented SDK RPC protocol + safeguards). Code/test
 verification for implementation files is tracked in the task handoff.
 
 The six affected test files passed (148 tests). Node and renderer typechecks,
@@ -220,11 +242,15 @@ reads because the runtime has no injectable seam for those operations.
 No lint suppression or production-only test hook was added.
 
 Architecture review approved the integrated changes after cache-generation,
-shutdown-race, counter-authority, and date-format corrections. The day-1 estimate
-has a real-format regression for `America/Mexico_City`.
+shutdown-race, counter-authority, and date-format corrections, including UTC
+day-1 estimation with local-time rendering for `America/Mexico_City`.
 
 Live browser verification is blocked: `bun run dev:automation instances` could
 not read permissions on the dev-instance registry. No screenshot was captured,
 no permissions were changed, and the running dev stack was not stopped.
 The logo, ring, and popover still need a live visual check when registry access
 is available. No claim of live visual approval is made.
+
+Contrast caveat for unchanged warning/danger fills: those status hues are kept
+as-is per product requirement and do not reach a 3:1 ratio against the neutral
+track in all themes; percent text duplicates the state value.

@@ -17,12 +17,11 @@ export function customAgentRailRows(
   usage: readonly CustomAgentUsage[],
   nowMs = Date.now(),
 ): CustomAgentUsageRow[] {
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
   return agents.map((agent) => {
     const answer = usage.find((row) => row.id === agent.id);
     const copilot = isCopilotCustomAgent(agent);
     const text = answer?.text.trim() ? answer.text : undefined;
-    const quota = customAgentQuotaView(answer?.quota, nowMs, timeZone);
+    const quota = customAgentQuotaView(answer?.quota, nowMs);
     return {
       id: agent.id,
       name: agent.name,

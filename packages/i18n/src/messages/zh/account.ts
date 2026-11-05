@@ -17,6 +17,7 @@ export const messages = {
   "account.usage.providers": "服务商用量",
   "account.usage.value.loading": "加载中…",
   "account.usage.value.unavailable": "不可用",
+  "account.usage.value.remaining": "剩余 {percent}",
   "account.usage.notReported": "未报告额度上限",
   "account.usage.value.notReported": "未报告",
   "account.usage.providerNotReported": "无用量数据",

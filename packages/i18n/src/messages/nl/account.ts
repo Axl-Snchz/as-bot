@@ -17,6 +17,7 @@ export const messages = {
   "account.usage.providers": "Gebruik per aanbieder",
   "account.usage.value.loading": "Laden…",
   "account.usage.value.unavailable": "Niet beschikbaar",
+  "account.usage.value.remaining": "{percent} over",
   "account.usage.notReported": "Geen limiet gemeld",
   "account.usage.value.notReported": "Niet gemeld",
   "account.usage.providerNotReported": "Geen gebruiksgegevens",

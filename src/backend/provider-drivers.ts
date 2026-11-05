@@ -974,7 +974,7 @@ export const BUILT_IN_PROVIDER_DRIVERS: readonly BuiltInProviderDriver[] = [
         flavor: ANTIGRAVITY_ACP_FLAVOR,
         argv: ANTIGRAVITY_ARGV,
         ...ANTIGRAVITY_SERVING_OPTIONS,
-        discoveryCwd: () => discoveryFolder("antigravity"),
+        discoveryCwd: () => customAgentDiscoveryFolder("antigravity"),
         privateTemp: antigravityTemp(context),
         ...(confinement
           ? { confine: (target) => confineSpawnTarget(target, confinement, antigravityAccountStatePaths(context)) }
@@ -1001,7 +1001,7 @@ export const BUILT_IN_PROVIDER_DRIVERS: readonly BuiltInProviderDriver[] = [
         argv: ANTIGRAVITY_ARGV,
         profileGeneration: true,
         ...ANTIGRAVITY_SERVING_OPTIONS,
-        discoveryCwd: () => discoveryFolder("antigravity"),
+        discoveryCwd: () => customAgentDiscoveryFolder("antigravity"),
         privateTemp: antigravityTemp(context),
         ...antigravityKeyOptions(context, false),
         signInMessage: sourceText("error.provider.antigravitySignIn"),
@@ -1289,7 +1289,7 @@ function customAgentChild(
     flavor: customAgentFlavor(config.command),
     label: config.name,
     allowNoModels: true,
-    discoveryCwd: () => folder ?? discoveryFolder(config.id),
+    discoveryCwd: () => folder ?? customAgentDiscoveryFolder(config.id),
     redactValues: () => values,
     argv: config.args,
     env,
@@ -1331,7 +1331,7 @@ let customAgentDiscoveryRoot: string | undefined;
  * first by another user, with an agent config file in it that the agent would then load. Gemini uses
  * the folder `antigravity`, an id that no custom agent can have.
  */
-function discoveryFolder(agentId: string): string {
+export function customAgentDiscoveryFolder(agentId: string): string {
   customAgentDiscoveryRoot ??= mkdtempSync(join(tmpdir(), "openbot-custom-agents-"));
   const folder = join(customAgentDiscoveryRoot, agentId);
   mkdirSync(folder, { recursive: true, mode: 0o700 });

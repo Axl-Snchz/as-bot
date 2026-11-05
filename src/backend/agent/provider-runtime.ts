@@ -78,6 +78,7 @@ import { ProviderSignInError } from "../provider-client-effects";
 import {
   antigravityTemp,
   BUILT_IN_PROVIDER_DRIVERS,
+  customAgentDiscoveryFolder,
   type ProviderClientContext,
   requireProviderDriver,
   savedCustomAgents,
@@ -1435,6 +1436,7 @@ export class ProviderRuntime implements ProviderPort {
                   return;
                 let pending = readCopilotInFlight.get(identity);
                 if (!pending) {
+                  const cwd = customAgentDiscoveryFolder(agent.id);
                   const controller = new AbortController();
                   const onAbort = () => controller.abort(signal.reason);
                   signal.addEventListener("abort", onAbort, { once: true });
@@ -1453,6 +1455,7 @@ export class ProviderRuntime implements ProviderPort {
                     args: agent.args,
                     env: { ...env, ...safeAgentEnvironment },
                     launchPath,
+                    cwd,
                     timeoutMs: ACCOUNT_USAGE_READ_TIMEOUT_MS,
                     signal: controller.signal,
                   });

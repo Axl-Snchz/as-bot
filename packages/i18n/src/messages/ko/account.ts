@@ -17,6 +17,7 @@ export const messages = {
   "account.usage.providers": "제공자 사용량",
   "account.usage.value.loading": "불러오는 중…",
   "account.usage.value.unavailable": "사용할 수 없음",
+  "account.usage.value.remaining": "{percent} 남음",
   "account.usage.notReported": "보고된 한도 없음",
   "account.usage.value.notReported": "보고되지 않음",
   "account.usage.providerNotReported": "사용량 정보 없음",

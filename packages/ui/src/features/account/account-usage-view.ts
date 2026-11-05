@@ -1,3 +1,4 @@
+import type { ProviderLogoVariant } from "@openbot/brand";
 import {
   type AccountUsage,
   type AccountUsageLimit,
@@ -35,6 +36,8 @@ export interface AccountUsageWindowRow {
 
 export interface AccountUsageProviderRow {
   provider: AgentProviderId;
+  /** Optional display override for the provider mark; defaults to `provider`. */
+  logo?: ProviderLogoVariant | undefined;
   /** The account after the first that the reading is for. Null for the provider's own sign-in. */
   accountId: string | null;
   /** The provider, and the account when the provider has more than one. */

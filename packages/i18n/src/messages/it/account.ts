@@ -17,6 +17,7 @@ export const messages = {
   "account.usage.providers": "Utilizzo dei provider",
   "account.usage.value.loading": "Caricamento…",
   "account.usage.value.unavailable": "Non disponibile",
+  "account.usage.value.remaining": "{percent} rimanente",
   "account.usage.notReported": "Nessun limite comunicato",
   "account.usage.value.notReported": "Non comunicato",
   "account.usage.providerNotReported": "Nessuna lettura dell'utilizzo",

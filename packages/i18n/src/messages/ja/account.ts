@@ -17,6 +17,7 @@ export const messages = {
   "account.usage.providers": "プロバイダー別の使用量",
   "account.usage.value.loading": "読み込み中…",
   "account.usage.value.unavailable": "表示できません",
+  "account.usage.value.remaining": "残り {percent}",
   "account.usage.notReported": "上限の報告なし",
   "account.usage.value.notReported": "報告なし",
   "account.usage.providerNotReported": "使用量データなし",

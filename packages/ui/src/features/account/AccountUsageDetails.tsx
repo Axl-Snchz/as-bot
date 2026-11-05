@@ -70,7 +70,7 @@ export function AccountUsageDetails(props: {
           <For each={props.rows} keyed={accountUsageRowKey}>
             {(row) => (
               <li class="account-usage-provider" aria-label={accountUsageRowLabel(row(), text, props.loading)}>
-                <ProviderLogo provider={row().provider} class="account-usage-provider-logo" />
+                <ProviderLogo provider={row().logo ?? row().provider} class="account-usage-provider-logo" />
                 <Show
                   when={row().windows.length > 0}
                   fallback={
@@ -86,11 +86,15 @@ export function AccountUsageDetails(props: {
                         </span>
                       </span>
                       <strong class="account-usage-provider-remaining">
-                        {!row().reportsUsage
-                          ? t("account.usage.value.notReported")
-                          : props.loading
-                            ? t("account.usage.value.loading")
-                            : t("account.usage.value.unavailable")}
+                        {row().remainingPercent !== null
+                          ? t("account.usage.value.remaining", {
+                              percent: text.format.percent((row().remainingPercent ?? 0) / 100),
+                            })
+                          : !row().reportsUsage
+                            ? t("account.usage.value.notReported")
+                            : props.loading
+                              ? t("account.usage.value.loading")
+                              : t("account.usage.value.unavailable")}
                       </strong>
                     </>
                   }
@@ -122,7 +126,9 @@ export function AccountUsageWindowList(props: { windows: readonly AccountUsageWi
               <span class="account-usage-window-fill" style={{ "inline-size": `${usageWindow.remainingPercent}%` }} />
             </span>
             <strong class="account-usage-window-remaining">
-              {text.format.percent(usageWindow.remainingPercent / 100)}
+              {t("account.usage.value.remaining", {
+                percent: text.format.percent(usageWindow.remainingPercent / 100),
+              })}
             </strong>
             <span
               class="account-usage-window-reset"

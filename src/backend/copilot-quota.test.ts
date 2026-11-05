@@ -74,6 +74,7 @@ describe("copilot quota", () => {
     expect(copilotCommandBasename("C:\\Users\\user\\OpenBot\\copilot-enterprise.cmd")).toBe("copilot-enterprise");
     expect(copilotCommandBasename("/usr/local/bin/copilot")).toBe("copilot");
     expect(copilotCommandBasename("COPILOT.EXE")).toBe("copilot");
+    expect(copilotCommandBasename("  C:\\tools\\copilot.CMD.EXE  ")).toBe("copilot");
     expect(copilotCommandBasename("copilot-beta")).toBe("copilot-beta");
     expect(isCopilotCommand("copilot")).toBe(true);
     expect(isCopilotCommand("C:\\tools\\copilot-enterprise.cmd")).toBe(true);
@@ -330,6 +331,7 @@ describe("copilot quota", () => {
   });
 
   it("parses framed ping+quota responses from the SDK stream", async () => {
+    const cwd = "C:\\temp\\openbot-custom-agents\\agent-1";
     const child = createChild((chunk) => {
       if (chunk.includes('"id":1')) {
         child.stdout.write(frame(1, { protocolVersion: 3, message: "ok", timestamp: Date.now() }));
@@ -353,7 +355,7 @@ describe("copilot quota", () => {
     spawnMock.mockReturnValue(child);
     await expect(
       invokeCopilotQuotaRpc(
-        { executable: "copilot", args: [], env: {}, launchPath: null, timeoutMs: 1000 },
+        { executable: "copilot", args: [], env: {}, launchPath: null, cwd, timeoutMs: 1000 },
         new AbortController().signal,
         { stopProcess: stopProcessTreeMock },
       ),
@@ -370,6 +372,7 @@ describe("copilot quota", () => {
         },
       },
     });
+    expect(spawnMock).toHaveBeenCalledWith("copilot", expect.any(Array), expect.objectContaining({ cwd }));
     expect(stopProcessTreeMock).toHaveBeenCalledTimes(1);
   });
 

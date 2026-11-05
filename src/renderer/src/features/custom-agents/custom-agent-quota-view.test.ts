@@ -4,10 +4,9 @@ import { describe, expect, it } from "vitest";
 import { customAgentQuotaView } from "./custom-agent-quota-view";
 
 const NOW_MS = Date.parse("2026-11-04T18:37:13.559-06:00");
-const UTC_TZ = "UTC";
 
 describe("customAgentQuotaView", () => {
-  it("computes used percent, ring clamp, dollars and neutral tone from counters", () => {
+  it("computes authoritative remaining percent, dollars and neutral tone from counters", () => {
     const quota = customAgentQuotaView(
       {
         state: "ready",
@@ -20,13 +19,12 @@ describe("customAgentQuotaView", () => {
         creditUsd: 0.01,
       },
       NOW_MS,
-      UTC_TZ,
     );
 
     expect(quota?.state).toBe("ready");
     if (quota?.state !== "ready") throw new Error("Expected ready state");
     expect(quota.usedPercent).toBeCloseTo(1.7, 4);
-    expect(quota.ringPercent).toBeCloseTo(1.7, 4);
+    expect(quota.remainingPercent).toBeCloseTo(98.3, 4);
     expect(quota.usedUsd).toBeCloseTo(42.5, 6);
     expect(quota.entitlementUsd).toBeCloseTo(2_500, 6);
     expect(quota.tone).toBe("neutral");
@@ -34,7 +32,7 @@ describe("customAgentQuotaView", () => {
     expect(quota.resetAtMs).toBe(Date.parse("2026-12-01T00:00:00.000Z"));
   });
 
-  it("refreshes denominator-driven percent when entitlement changes", () => {
+  it("refreshes denominator-driven remaining percent when entitlement changes", () => {
     const first = customAgentQuotaView(
       {
         state: "ready",
@@ -47,7 +45,6 @@ describe("customAgentQuotaView", () => {
         creditUsd: 0.01,
       },
       NOW_MS,
-      UTC_TZ,
     );
     const next = customAgentQuotaView(
       {
@@ -61,7 +58,6 @@ describe("customAgentQuotaView", () => {
         creditUsd: 0.01,
       },
       NOW_MS,
-      UTC_TZ,
     );
 
     expect(first?.state).toBe("ready");
@@ -69,9 +65,35 @@ describe("customAgentQuotaView", () => {
     if (first?.state !== "ready" || next?.state !== "ready") throw new Error("Expected ready state");
     expect(first.usedPercent).toBeCloseTo(8.5, 4);
     expect(next.usedPercent).toBeCloseTo(1.7, 4);
+    expect(first.remainingPercent).toBeCloseTo(91.5, 4);
+    expect(next.remainingPercent).toBeCloseTo(98.3, 4);
     expect(first.usedUsd).toBe(next.usedUsd);
     expect(first.entitlementUsd).toBeCloseTo(500, 6);
     expect(next.entitlementUsd).toBeCloseTo(2_500, 6);
+  });
+
+  it.each([
+    [704, "neutral"],
+    [706, "warning"],
+    [904, "warning"],
+    [906, "critical"],
+  ] as const)("uses the displayed whole-percent tone for %s used credits", (usedCredits, tone) => {
+    const quota = customAgentQuotaView(
+      {
+        state: "ready",
+        entitlementCredits: 1_000,
+        usedCredits,
+        overageCredits: 0,
+        remainingCredits: 1_000 - usedCredits,
+        remainingPercentage: (1 - usedCredits / 1_000) * 100,
+        resetDate: null,
+        creditUsd: 0.01,
+      },
+      NOW_MS,
+    );
+    expect(quota?.state).toBe("ready");
+    if (quota?.state !== "ready") throw new Error("Expected ready state");
+    expect(quota.tone).toBe(tone);
   });
 
   it("estimates day-one reset for missing or past reset dates", () => {
@@ -87,7 +109,6 @@ describe("customAgentQuotaView", () => {
         creditUsd: 0.01,
       },
       NOW_MS,
-      UTC_TZ,
     );
     const past = customAgentQuotaView(
       {
@@ -101,7 +122,6 @@ describe("customAgentQuotaView", () => {
         creditUsd: 0.01,
       },
       NOW_MS,
-      UTC_TZ,
     );
 
     expect(missing?.state).toBe("ready");
@@ -126,7 +146,6 @@ describe("customAgentQuotaView", () => {
         creditUsd: 0.01,
       },
       NOW_MS,
-      UTC_TZ,
     );
     const zero = customAgentQuotaView(
       {
@@ -140,19 +159,40 @@ describe("customAgentQuotaView", () => {
         creditUsd: 0.01,
       },
       NOW_MS,
-      UTC_TZ,
     );
-    const noData = customAgentQuotaView({ state: "no-data" }, NOW_MS, UTC_TZ);
-    const error = customAgentQuotaView(
-      { state: "error", messageKey: "account.usage.value.unavailable" },
+    const zeroEntitlementUnused = customAgentQuotaView(
+      {
+        state: "ready",
+        entitlementCredits: 0,
+        usedCredits: 0,
+        overageCredits: 0,
+        remainingCredits: 0,
+        remainingPercentage: 100,
+        resetDate: "2026-12-01T00:00:00.000Z",
+        creditUsd: 0.01,
+      },
       NOW_MS,
-      UTC_TZ,
     );
+    const zeroEntitlementUsed = customAgentQuotaView(
+      {
+        state: "ready",
+        entitlementCredits: 0,
+        usedCredits: 15,
+        overageCredits: 15,
+        remainingCredits: 0,
+        remainingPercentage: 0,
+        resetDate: "2026-12-01T00:00:00.000Z",
+        creditUsd: 0.01,
+      },
+      NOW_MS,
+    );
+    const noData = customAgentQuotaView({ state: "no-data" }, NOW_MS);
+    const error = customAgentQuotaView({ state: "error", messageKey: "account.usage.value.unavailable" }, NOW_MS);
 
     expect(overage?.state).toBe("ready");
     if (overage?.state !== "ready") throw new Error("Expected ready state");
     expect(overage.usedPercent).toBeCloseTo(112, 4);
-    expect(overage.ringPercent).toBe(100);
+    expect(overage.remainingPercent).toBe(0);
     expect(overage.overageCredits).toBe(300);
     expect(overage.overageUsd).toBeCloseTo(3, 6);
     expect(overage.tone).toBe("critical");
@@ -160,13 +200,19 @@ describe("customAgentQuotaView", () => {
     expect(zero?.state).toBe("ready");
     if (zero?.state !== "ready") throw new Error("Expected ready state");
     expect(zero.usedPercent).toBe(0);
-    expect(zero.ringPercent).toBe(0);
+    expect(zero.remainingPercent).toBe(100);
+    expect(zeroEntitlementUnused?.state).toBe("ready");
+    expect(zeroEntitlementUsed?.state).toBe("ready");
+    if (zeroEntitlementUnused?.state !== "ready" || zeroEntitlementUsed?.state !== "ready")
+      throw new Error("Expected ready state");
+    expect(zeroEntitlementUnused.remainingPercent).toBe(100);
+    expect(zeroEntitlementUsed.remainingPercent).toBe(0);
 
     expect(noData).toEqual({ state: "no-data" });
     expect(error).toEqual({ state: "error", messageKey: "account.usage.value.unavailable" });
   });
 
-  it("keeps estimated renewal on day 1 for America/Mexico_City formatting", () => {
+  it("keeps UTC day-1 estimate while local formatting can show previous day", () => {
     const estimated = customAgentQuotaView(
       {
         state: "ready",
@@ -179,22 +225,50 @@ describe("customAgentQuotaView", () => {
         creditUsd: 0.01,
       },
       NOW_MS,
-      "America/Mexico_City",
     );
 
     expect(estimated?.state).toBe("ready");
     if (estimated?.state !== "ready") throw new Error("Expected ready state");
-    const dayText = new Intl.DateTimeFormat("en-US", {
-      day: "numeric",
-      timeZone: "America/Mexico_City",
-    }).format(new Date(estimated.resetAtMs));
-    const shortDate = new Intl.DateTimeFormat("en-US", {
+    expect(estimated.resetAtMs).toBe(Date.parse("2026-12-01T00:00:00.000Z"));
+    const localText = new Intl.DateTimeFormat("en-US", {
       month: "short",
       day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: false,
       timeZone: "America/Mexico_City",
     }).format(new Date(estimated.resetAtMs));
-    expect(dayText).toBe("1");
-    expect(shortDate).not.toContain("30");
-    expect(shortDate).not.toContain("31");
+    expect(localText).toBe("Nov 30, 18:00");
+  });
+
+  it("rolls estimate from UTC December to UTC January while local time can stay on Dec 31", () => {
+    const nearUtcYearEnd = Date.parse("2026-12-31T23:50:00.000Z");
+    const estimated = customAgentQuotaView(
+      {
+        state: "ready",
+        entitlementCredits: 250_000,
+        usedCredits: 0,
+        overageCredits: 0,
+        remainingCredits: 250_000,
+        remainingPercentage: 100,
+        resetDate: null,
+        creditUsd: 0.01,
+      },
+      nearUtcYearEnd,
+    );
+
+    expect(estimated?.state).toBe("ready");
+    if (estimated?.state !== "ready") throw new Error("Expected ready state");
+    expect(estimated.resetAtMs).toBe(Date.parse("2027-01-01T00:00:00.000Z"));
+    const mexicoDate = new Intl.DateTimeFormat("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: false,
+      timeZone: "America/Mexico_City",
+    }).format(new Date(estimated.resetAtMs));
+    expect(mexicoDate).toBe("Dec 31, 2026, 18:00");
   });
 });

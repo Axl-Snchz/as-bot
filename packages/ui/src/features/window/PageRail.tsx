@@ -20,6 +20,7 @@ import {
   type AccountUsageProviderRow,
   type AccountUsageTone,
   accountUsageRowKey,
+  formatUsageReset,
 } from "@openbot/ui/features/account/account-usage-view";
 import { useText } from "@openbot/ui/text";
 import { Dynamic, type JSX } from "@solidjs/web";
@@ -150,24 +151,16 @@ function UsageRings(props: {
       onClick={props.onOpen}
     >
       <UsageRingIcon tracks={windows().map((window) => ({ percent: window.remainingPercent, tone: window.tone }))} />
-      <ProviderLogo provider={props.row.provider} class="window-rail-usage-logo" />
+      <ProviderLogo provider={props.row.logo ?? props.row.provider} class="window-rail-usage-logo" />
     </RailButton>
   );
 }
 
 interface CustomAgentUsageQuotaReady {
   state: "ready";
-  usedPercent: number;
-  ringPercent: number;
+  remainingPercent: number;
   tone: AccountUsageTone;
-  usedCredits: number;
-  entitlementCredits: number;
-  overageCredits: number;
-  usedUsd: number;
-  entitlementUsd: number;
-  overageUsd: number;
   resetAtMs: number;
-  resetEstimated: boolean;
 }
 
 type CustomAgentUsageQuota =
@@ -187,28 +180,42 @@ export interface CustomAgentUsageRailRow {
 
 /**
  * One saved custom agent in the rail. Copilot quota uses the same ring treatment as built-in providers,
- * with used percentage from credits counters.
+ * with remaining percentage from credits counters.
  */
 function CustomAgentUsageButton(props: { row: CustomAgentUsageRailRow; onOpen: (button: HTMLElement) => void }) {
-  const { t, format } = useText();
+  const text = useText();
+  const { t } = text;
   const readyQuota = () => (props.row.quota?.state === "ready" ? props.row.quota : null);
-  const usageLabel = () => {
+  const copilotUsageRow = () => {
+    if (props.row.providerLogo !== "copilot") return null;
     const quota = readyQuota();
-    if (!quota) return t("app.rail.customAgentUsage", { name: props.row.name });
-    return t("app.rail.customAgentUsagePercent", {
+    if (!quota) return null;
+    const displayRemainingPercent = Math.round(quota.remainingPercent);
+    const resetsAt = Number.isFinite(quota.resetAtMs) ? Math.floor(quota.resetAtMs / 1_000) : null;
+    const monthlyWindow = {
+      label: t("account.usage.window.monthly"),
+      remainingPercent: displayRemainingPercent,
+      tone: quota.tone,
+      resetsAt,
+      resetsAtLabel: formatUsageReset(resetsAt, text),
+    };
+    return {
+      provider: "acp" as const,
+      logo: "copilot" as const,
+      accountId: props.row.id,
       name: props.row.name,
-      percent: format.number(quota.usedPercent, { maximumFractionDigits: 1 }),
-    });
+      remainingPercent: displayRemainingPercent,
+      tone: quota.tone,
+      windows: [monthlyWindow],
+      ringWindows: [monthlyWindow],
+      reportsUsage: true,
+      sharedQuotaWith: null,
+    } satisfies AccountUsageProviderRow;
   };
-  const resetLabel = () => {
-    const quota = readyQuota();
-    if (!quota) return "";
-    const resetDate = format.date(new Date(quota.resetAtMs), { month: "short", day: "numeric" });
-    if (quota.resetEstimated) return t("app.rail.customAgentRenewsEstimated", { date: resetDate });
-    return t("account.usage.resetsAt", { time: resetDate });
+  const usageLabel = () => {
+    return t("app.rail.customAgentUsage", { name: props.row.name });
   };
   const card = () => {
-    const quota = readyQuota();
     if (props.row.quota?.state === "error")
       return (
         <div class="window-rail-agent-usage">
@@ -216,42 +223,6 @@ function CustomAgentUsageButton(props: { row: CustomAgentUsageRailRow; onOpen: (
           <p class="account-usage-popover-error">{t(props.row.quota.messageKey)}</p>
         </div>
       );
-    if (quota) {
-      return (
-        <div class="window-rail-agent-usage">
-          <h2 class="account-usage-popover-title">{props.row.name}</h2>
-          <div class="account-usage-window window-rail-agent-usage-window" data-usage-tone={quota.tone}>
-            <span class="account-usage-window-label">{t("app.rail.customAgentCredits")}</span>
-            <span class="account-usage-window-bar" aria-hidden="true">
-              <span class="account-usage-window-fill" style={{ "inline-size": `${quota.ringPercent}%` }} />
-            </span>
-            <strong class="account-usage-window-remaining">{format.percent(quota.usedPercent / 100)}</strong>
-            <span class="account-usage-window-reset">{resetLabel()}</span>
-          </div>
-          <p class="window-rail-agent-usage-metric">
-            {t("app.rail.customAgentCreditsAmount", {
-              used: format.number(quota.usedCredits),
-              entitlement: format.number(quota.entitlementCredits),
-            })}
-          </p>
-          <p class="window-rail-agent-usage-metric">
-            {t("app.rail.customAgentCreditsUsd", {
-              used: format.currencyUsd(quota.usedUsd),
-              entitlement: format.currencyUsd(quota.entitlementUsd),
-            })}
-          </p>
-          <Show when={quota.overageCredits > 0}>
-            <p class="window-rail-agent-usage-metric window-rail-agent-usage-overage">
-              {t("app.rail.customAgentOverage", {
-                credits: format.number(quota.overageCredits),
-                usd: format.currencyUsd(quota.overageUsd),
-              })}
-            </p>
-          </Show>
-          <p class="window-rail-agent-usage-note">{t("app.rail.customAgentSharedBudget")}</p>
-        </div>
-      );
-    }
     return (
       <div class="window-rail-agent-usage">
         <h2 class="account-usage-popover-title">{props.row.name}</h2>
@@ -264,21 +235,16 @@ function CustomAgentUsageButton(props: { row: CustomAgentUsageRailRow; onOpen: (
     );
   };
   return (
-    <RailButton label={usageLabel()} card={card} class="window-rail-usage" onClick={props.onOpen}>
-      <Show
-        when={readyQuota()}
-        fallback={
+    <Show
+      when={copilotUsageRow()}
+      fallback={
+        <RailButton label={usageLabel()} card={card} class="window-rail-usage" onClick={props.onOpen}>
           <ProviderLogo provider={props.row.providerLogo} class="window-rail-usage-logo window-rail-agent-usage-logo" />
-        }
-      >
-        {(quota) => (
-          <>
-            <UsageRingIcon tracks={[{ percent: quota().ringPercent, tone: quota().tone }]} />
-            <ProviderLogo provider={props.row.providerLogo} class="window-rail-usage-logo" />
-          </>
-        )}
-      </Show>
-    </RailButton>
+        </RailButton>
+      }
+    >
+      {(row) => <UsageRings row={row()} shared={[]} onOpen={props.onOpen} />}
+    </Show>
   );
 }
 

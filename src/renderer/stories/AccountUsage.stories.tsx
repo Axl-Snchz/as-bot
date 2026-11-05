@@ -10,6 +10,7 @@ const nowSeconds = Math.floor(Date.now() / 1_000);
 const fiveHourReset = nowSeconds + 2 * 3_600 + 14 * 60;
 const weeklyReset = nowSeconds + 4 * 86_400 + 6 * 3_600;
 const monthlyReset = nowSeconds + 18 * 86_400;
+const shortWeeklyReset = nowSeconds + 22 * 3_600 + 27 * 60;
 
 const mixedRows = accountUsageProviderRows({
   limits: [
@@ -68,6 +69,15 @@ const mixedRows = accountUsageProviderRows({
 });
 
 const oneProviderRows = mixedRows.filter((row) => row.provider === "codex");
+const barFeedbackRows = accountUsageProviderRows({
+  limits: [
+    {
+      id: "claude",
+      primary: { usedPercent: 0, windowDurationMins: 300, resetsAt: fiveHourReset },
+      secondary: { usedPercent: 22, windowDurationMins: 10_080, resetsAt: shortWeeklyReset },
+    },
+  ],
+});
 const unreportedRows = accountUsageProviderRows(
   {
     limits: [
@@ -86,12 +96,25 @@ const unreportedRows = accountUsageProviderRows(
 const warningRows = accountUsageProviderRows({
   limits: [
     {
-      id: "claude",
-      primary: { usedPercent: 40, windowDurationMins: 300, resetsAt: fiveHourReset },
+      id: "codex",
+      primary: { usedPercent: 75, windowDurationMins: 300, resetsAt: fiveHourReset },
       secondary: { usedPercent: 71, windowDurationMins: 10_080, resetsAt: weeklyReset },
     },
   ],
 });
+const criticalRows = accountUsageProviderRows({
+  limits: [
+    {
+      id: "grok",
+      primary: { usedPercent: 94, windowDurationMins: 300, resetsAt: fiveHourReset },
+      secondary: { usedPercent: 92, windowDurationMins: 10_080, resetsAt: weeklyReset },
+    },
+  ],
+});
+const longLocaleRows = barFeedbackRows.map((row) => ({
+  ...row,
+  name: "Claude Enterprise Workspace Deutschland Nordwest Team",
+}));
 
 function UsagePopover(props: { rows: AccountUsageProviderRow[]; loading?: boolean; error?: string | null }) {
   return (
@@ -121,12 +144,32 @@ type Story = StoryObj<typeof meta>;
 
 export const ConnectedProviders: Story = {};
 
+export const BarVisibilityDark: Story = {
+  args: { rows: barFeedbackRows },
+  globals: { colorScheme: "dark" },
+};
+
+export const BarVisibilityLight: Story = {
+  args: { rows: barFeedbackRows },
+  globals: { colorScheme: "light" },
+};
+
 export const OneProvider: Story = {
   args: { rows: oneProviderRows },
 };
 
 export const Warning: Story = {
   args: { rows: warningRows },
+};
+
+export const Critical: Story = {
+  args: { rows: criticalRows },
+};
+
+export const LongLocaleNarrow: Story = {
+  args: { rows: longLocaleRows },
+  globals: { locale: "de" },
+  parameters: { viewport: { defaultViewport: "mobile1" } },
 };
 
 export const UnreportedProvider: Story = {

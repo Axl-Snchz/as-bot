@@ -17,6 +17,7 @@ export const messages = {
   "account.usage.providers": "استخدام المزوّدين",
   "account.usage.value.loading": "جارٍ التحميل…",
   "account.usage.value.unavailable": "غير متاح",
+  "account.usage.value.remaining": "{percent} متبقٍّ",
   "account.usage.notReported": "لم يُبلَّغ عن حد",
   "account.usage.value.notReported": "غير مُبلَّغ",
   "account.usage.providerNotReported": "لا توجد قراءة للاستخدام",

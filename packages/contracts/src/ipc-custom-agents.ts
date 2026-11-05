@@ -11,6 +11,9 @@ import { isBoundedString, isFiniteNumber, isNullableBoundedString } from "./ipc-
 import { CUSTOM_PROVIDER_RESTARTS, type CustomProviderRestart } from "./ipc-custom-providers";
 import { isDynamicRecord, isOneOf, isString } from "./runtime-values";
 
+const WINDOWS_COMMAND_EXTENSIONS = [".cmd", ".exe", ".bat", ".com", ".ps1"] as const;
+const COPILOT_AGENT_COMMANDS = new Set(["copilot", "copilot-enterprise"]);
+
 export const CUSTOM_AGENT_LIMITS = {
   agents: 16,
   command: 1_024,
@@ -137,6 +140,22 @@ export interface DetectedAcpAgent {
   /** The full path, so the saved agent does not depend on PATH. */
   command: string;
   args: string[];
+}
+
+export function customAgentCommandBasename(command: string): string {
+  const normalized = command.trim().replace(/\\/gu, "/").toLowerCase();
+  let base = normalized.split("/").at(-1) ?? "";
+  while (base.length > 0) {
+    const extension = WINDOWS_COMMAND_EXTENSIONS.find((candidate) => base.endsWith(candidate));
+    if (!extension || base.length === extension.length) break;
+    base = base.slice(0, -extension.length);
+  }
+  return base;
+}
+
+export function isCopilotAgentCommand(command: string, resolvedCommand?: string | null): boolean {
+  if (COPILOT_AGENT_COMMANDS.has(customAgentCommandBasename(command))) return true;
+  return resolvedCommand ? COPILOT_AGENT_COMMANDS.has(customAgentCommandBasename(resolvedCommand)) : false;
 }
 
 function isArgs(value: unknown): value is string[] {
