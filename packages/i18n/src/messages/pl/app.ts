@@ -60,6 +60,8 @@ export const messages = {
   "app.rail.settingsNotice": "Ustawienia. {notice}",
   "app.rail.more": "Więcej",
   "app.rail.pinPage": "Przypnij {name} do paska",
+  "app.rail.reorderHint": "Naciśnij Alt+Strzałka w górę lub Alt+Strzałka w dół, aby przenieść tę ikonę na pasku",
+  "app.rail.reorderMoved": "Przeniesiono {name} na pozycję {position} z {total}",
   "app.page.serverFallback": "Serwer",
   "app.help.label": "Pomoc",
   "app.help.whatsNew": "Co nowego",

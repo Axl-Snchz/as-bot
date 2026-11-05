@@ -60,6 +60,8 @@ export const messages = {
   "app.rail.settingsNotice": "Ayarlar. {notice}",
   "app.rail.more": "Daha fazla",
   "app.rail.pinPage": "{name} sayfasını çubuğa sabitle",
+  "app.rail.reorderHint": "Bu simgeyi çubukta taşımak için Alt+Yukarı Ok veya Alt+Aşağı Ok tuşlarına basın",
+  "app.rail.reorderMoved": "{name}, {total} içinde {position}. konuma taşındı",
   "app.page.serverFallback": "Sunucu",
   "app.help.label": "Yardım",
   "app.help.whatsNew": "Yenilikler",

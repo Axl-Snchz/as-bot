@@ -61,6 +61,8 @@ export const messages = {
   "app.rail.settingsNotice": "Réglages. {notice}",
   "app.rail.more": "Plus",
   "app.rail.pinPage": "Épingler {name} à la barre",
+  "app.rail.reorderHint": "Appuyez sur Alt+Flèche haut ou Alt+Flèche bas pour déplacer cette icône dans la barre",
+  "app.rail.reorderMoved": "{name} déplacé en position {position} sur {total}",
   "app.page.serverFallback": "Serveur",
   "app.help.label": "Aide",
   "app.help.whatsNew": "Nouveautés",

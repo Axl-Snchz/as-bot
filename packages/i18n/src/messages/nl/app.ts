@@ -60,6 +60,8 @@ export const messages = {
   "app.rail.settingsNotice": "Instellingen. {notice}",
   "app.rail.more": "Meer",
   "app.rail.pinPage": "{name} vastzetten in de balk",
+  "app.rail.reorderHint": "Druk op Alt+Pijl omhoog of Alt+Pijl omlaag om dit pictogram in de balk te verplaatsen",
+  "app.rail.reorderMoved": "{name} verplaatst naar positie {position} van {total}",
   "app.page.serverFallback": "Server",
   "app.help.label": "Help",
   "app.help.whatsNew": "Wat is er nieuw",

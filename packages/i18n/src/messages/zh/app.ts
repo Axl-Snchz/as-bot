@@ -62,6 +62,8 @@ export const messages = {
   "app.rail.settingsNotice": "设置。{notice}",
   "app.rail.more": "更多",
   "app.rail.pinPage": "将{name}固定到侧栏",
+  "app.rail.reorderHint": "按 Alt+向上箭头 或 Alt+向下箭头，在侧栏中移动此图标",
+  "app.rail.reorderMoved": "已将 {name} 移到第 {position} 位，共 {total} 项",
   "app.page.serverFallback": "服务器",
   "app.help.label": "帮助",
   "app.help.whatsNew": "新功能",

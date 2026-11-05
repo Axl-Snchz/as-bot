@@ -59,6 +59,8 @@ export const messages = {
   "app.rail.settingsNotice": "설정. {notice}",
   "app.rail.more": "더 보기",
   "app.rail.pinPage": "{name} 바에 고정",
+  "app.rail.reorderHint": "Alt+위쪽 화살표 또는 Alt+아래쪽 화살표로 이 아이콘을 레일에서 이동",
+  "app.rail.reorderMoved": "{name} 항목을 {total}개 중 {position}번째로 이동",
   "app.page.serverFallback": "서버",
   "app.help.label": "도움말",
   "app.help.whatsNew": "새로운 기능",

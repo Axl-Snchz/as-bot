@@ -1,5 +1,5 @@
 import type { CustomAgentSummary, CustomAgentUsage as CustomAgentUsageState } from "@openbot/contracts/ipc";
-import { accountUsageProviderRows } from "@openbot/ui/features/account/account-usage-view";
+import { accountUsageProviderRows, accountUsageRowKey } from "@openbot/ui/features/account/account-usage-view";
 import { HelpMenu } from "@openbot/ui/features/updates/HelpMenu";
 import {
   type CustomAgentUsageRailRow,
@@ -45,6 +45,10 @@ const comparisonUsageRows = accountUsageProviderRows({
     },
   ],
 });
+const comparisonCodexUsageRow = comparisonUsageRows.find((row) => row.provider === "codex");
+const comparisonClaudeUsageRow = comparisonUsageRows.find((row) => row.provider === "claude");
+if (!comparisonCodexUsageRow || !comparisonClaudeUsageRow)
+  throw new Error("PageRail stories expected codex and claude usage rows for reorder preview.");
 
 /** A merged Cursor plan counts the Grok plan quota: one Grok ring, and its card lists Cursor too. */
 const sharedQuotaRows = accountUsageProviderRows({
@@ -141,10 +145,12 @@ function RailPreview(props: {
   logo?: PageRailProps["logo"];
   customAgentUsage?: readonly CustomAgentUsageRailRow[];
   usageRows?: PageRailProps["usageRows"];
+  reorderableOrder?: readonly string[];
 }) {
   const { t } = useText();
   const [current, setCurrent] = createSignal<PageRailPage | null>("agents");
   const [pinned, setPinned] = createSignal<readonly PageRailPinnablePage[]>(["usage"]);
+  const [reorderableOrder, setReorderableOrder] = createSignal<readonly string[]>(props.reorderableOrder ?? []);
   return (
     // The extra box keeps the rail out of the rule that hides it in a narrow window.
     <div class="app-window" style={{ height: "100vh" }}>
@@ -156,6 +162,8 @@ function RailPreview(props: {
           onPinChange={(page, pin) =>
             setPinned((pages) => (pin ? [...pages, page] : pages.filter((other) => other !== page)))
           }
+          reorderableOrder={reorderableOrder()}
+          onReorderableOrderChange={(next) => setReorderableOrder(next)}
           usageRows={props.usageRows ?? usageRows}
           customAgentUsage={props.customAgentUsage}
           onAgents={() => setCurrent("agents")}
@@ -213,6 +221,19 @@ export const UsageComparisonBuiltInAndCopilot: Story = {
   args: {
     usageRows: comparisonUsageRows,
     customAgentUsage: customAgentsMixedUsage.filter((row) => row.id === "copilot-local"),
+  },
+};
+
+export const ReorderedUsageAndCustomAgents: Story = {
+  args: {
+    usageRows: comparisonUsageRows,
+    customAgentUsage: customAgentsMixedUsage.filter((row) => row.id === "copilot-local" || row.id === "devin"),
+    reorderableOrder: [
+      "custom-agent:devin",
+      `usage:${accountUsageRowKey(comparisonCodexUsageRow)}`,
+      `usage:${accountUsageRowKey(comparisonClaudeUsageRow)}`,
+      "custom-agent:copilot-local",
+    ],
   },
 };
 

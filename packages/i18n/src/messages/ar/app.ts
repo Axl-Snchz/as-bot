@@ -60,6 +60,8 @@ export const messages = {
   "app.rail.settingsNotice": "الإعدادات. {notice}",
   "app.rail.more": "المزيد",
   "app.rail.pinPage": "تثبيت {name} في الشريط",
+  "app.rail.reorderHint": "اضغط Alt+سهم لأعلى أو Alt+سهم لأسفل لتحريك هذا الرمز داخل الشريط",
+  "app.rail.reorderMoved": "تم نقل {name} إلى الموضع {position} من {total}",
   "app.page.serverFallback": "خادم",
   "app.help.label": "المساعدة",
   "app.help.whatsNew": "ما الجديد",

@@ -95,6 +95,21 @@
   height: var(--openbot-icon-lg);
 }
 
+.window-rail-reorder-group[data-rail-dragging] .window-rail-button[data-rail-draggable] {
+  cursor: grab;
+}
+
+.window-rail-button[data-rail-draggable][data-rail-dragging] {
+  cursor: grabbing;
+  background: var(--openbot-bg-control-hover);
+  color: var(--openbot-text-primary);
+}
+
+.window-rail-button[data-rail-draggable][data-rail-drop-target]:not([data-rail-dragging]) {
+  background: var(--openbot-bg-control-hover);
+  color: var(--openbot-text-primary);
+}
+
 /* The dot of a rail button that has a notice, such as an update. */
 .window-rail-notice {
   position: absolute;
