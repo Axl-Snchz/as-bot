@@ -30,6 +30,7 @@ import type {
   WorkspaceDirectory,
 } from "@openbot/contracts/ipc";
 import type { ConversationUiBlock } from "@openbot/contracts/ui-blocks";
+import type { ProviderModelPickerCustomAgentUsageRow } from "@openbot/ui/components/ProviderModelPicker";
 import type { AgentMessage, AgentProfile } from "@openbot/ui/data";
 import type { BrowserViewRuntime } from "@openbot/ui/features/browser/BrowserLiveView";
 import type { ChannelWorker } from "@openbot/ui/features/channels/ChannelActivityIndicator";
@@ -169,6 +170,8 @@ export interface ConversationProps {
   customProviders?: readonly CustomProviderSummary[] | undefined;
   /** The user's own ACP agents on this computer, for the model picker's Custom tab. */
   customAgents?: readonly CustomAgentSummary[] | undefined;
+  /** Usage rows for local custom agents, including Copilot quota when available. */
+  customAgentUsage?: readonly ProviderModelPickerCustomAgentUsageRow[] | undefined;
   onDownloadProvider?: ((provider: AgentProviderId) => void | Promise<void>) | undefined;
   onCancelProviderDownload?: ((provider: AgentProviderId) => void | Promise<void>) | undefined;
   onConnectProvider?: ((provider: AgentProviderId) => void | Promise<void>) | undefined;

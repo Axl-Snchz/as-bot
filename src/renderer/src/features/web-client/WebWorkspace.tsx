@@ -2727,6 +2727,7 @@ function WebWorkspaceFrame(props: WebWorkspaceProps) {
                   // providers, and Connect runs the provider's route for this tab.
                   providerRuntimeStatuses={providerSettings()?.providerRuntimeStatuses}
                   customProviders={providerSettings()?.customProviders}
+                  customAgentUsage={undefined}
                   onDownloadProvider={providerSettings()?.onDownloadProvider}
                   onCancelProviderDownload={providerSettings()?.onCancelProviderDownload}
                   onConnectProvider={providerSettings() ? connectFromComposer : undefined}

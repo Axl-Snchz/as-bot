@@ -445,9 +445,34 @@
   opacity: 0.48;
 }
 
-.provider-model-rail-button:not(.provider-model-rail-button-selected, .provider-model-rail-button-unavailable):hover
-  .provider-model-mark {
-  opacity: 0.8;
+.provider-model-rail-button .provider-model-rail-ring {
+  position: absolute;
+  inset: 1px;
+  width: 34px;
+  height: 34px;
+  transform: rotate(-90deg);
+}
+
+/* Duplicated from page-rail.css: the picker rail stylesheet is scoped and cannot inherit that file. */
+.provider-model-rail-button .window-rail-usage-track {
+  stroke: currentcolor;
+  opacity: 0.15;
+}
+
+.provider-model-rail-button .window-rail-usage-arc {
+  stroke: var(--openbot-success);
+}
+
+.provider-model-rail-button .window-rail-usage-arc[data-usage-tone="warning"] {
+  stroke: var(--openbot-warning);
+}
+
+.provider-model-rail-button .window-rail-usage-arc[data-usage-tone="critical"] {
+  stroke: var(--openbot-danger);
+}
+
+.provider-model-rail-button-usage .provider-model-mark {
+  opacity: 0.9;
 }
 
 .provider-model-rail-button-selected .provider-model-mark {
@@ -463,6 +488,11 @@
 
 .provider-model-rail-button-unavailable:is(:hover, .provider-model-rail-button-selected) .provider-model-mark {
   opacity: 0.6;
+}
+
+.provider-model-rail-button:not(.provider-model-rail-button-selected, .provider-model-rail-button-unavailable):hover
+  .provider-model-mark {
+  opacity: 0.8;
 }
 
 .provider-model-rail-button:is(
@@ -619,6 +649,52 @@
   color: var(--openbot-text-muted);
   font-size: var(--openbot-text-sm);
   line-height: 16px;
+}
+
+.provider-model-usage-preview {
+  display: grid;
+  gap: var(--openbot-space-1);
+  margin: 0 var(--ui-menu-padding) var(--openbot-space-2);
+  padding-inline: var(--ui-menu-inset);
+}
+
+.provider-model-usage-preview-row {
+  display: grid;
+  gap: var(--openbot-space-0-5);
+}
+
+.provider-model-usage-preview-row > strong {
+  color: var(--openbot-text-muted);
+  font-size: var(--openbot-text-sm);
+  font-weight: var(--openbot-weight-medium);
+  line-height: var(--openbot-leading-sm);
+}
+
+.provider-model-usage-preview .account-usage-windows,
+.provider-model-usage-preview .account-usage-window {
+  display: grid;
+  min-width: 0;
+}
+
+.provider-model-usage-preview .account-usage-windows {
+  grid-column: 1 / -1;
+  grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
+  row-gap: var(--openbot-space-0-5);
+}
+
+.provider-model-usage-preview .account-usage-window {
+  grid-template-columns: subgrid;
+}
+
+.provider-model-usage-preview .account-usage-window-label,
+.provider-model-usage-preview .account-usage-window-reset,
+.provider-model-usage-preview .account-usage-window-remaining {
+  font-size: var(--openbot-text-sm);
+  line-height: var(--openbot-leading-sm);
+}
+
+.provider-model-usage-preview .account-usage-window-bar {
+  margin-inline: var(--openbot-space-2);
 }
 
 .provider-model-empty > .ui-progress {
