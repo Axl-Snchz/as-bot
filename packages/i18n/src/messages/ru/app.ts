@@ -60,6 +60,8 @@ export const messages = {
   "app.rail.settingsNotice": "Настройки. {notice}",
   "app.rail.more": "Ещё",
   "app.rail.pinPage": "Закрепить «{name}» на панели",
+  "app.rail.reorderHint": "Нажмите Alt+Стрелка вверх или Alt+Стрелка вниз, чтобы переместить этот значок на панели",
+  "app.rail.reorderMoved": "{name} перемещён на позицию {position} из {total}",
   "app.page.serverFallback": "Сервер",
   "app.help.label": "Справка",
   "app.help.whatsNew": "Что нового",

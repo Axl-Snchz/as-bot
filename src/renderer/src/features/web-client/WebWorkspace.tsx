@@ -1893,6 +1893,8 @@ function WebWorkspaceFrame(props: WebWorkspaceProps) {
               current={railPage()}
               pinned={layout.railPinned()}
               onPinChange={layout.setRailPinned}
+              reorderableOrder={layout.railReorder()}
+              onReorderableOrderChange={layout.setRailReorder}
               usageRows={usageRows()}
               onAgents={() => showSidebarView("agents")}
               onRoutines={routinesSupported() ? () => showSidebarView("routines") : undefined}

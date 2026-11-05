@@ -11,6 +11,8 @@ export const SERVER_VIEW_STORAGE_KEY = "openbot:server-view";
 export const SIDEBAR_VIEW_STORAGE_KEY = "openbot:sidebar-view";
 /** The pages that the user pinned to the page rail or took off it: a JSON record of booleans. */
 export const RAIL_PINS_STORAGE_KEY = "openbot:rail-pins";
+/** The saved order of usage and custom-agent buttons in the page rail lower group. */
+export const RAIL_REORDER_STORAGE_KEY = "openbot:rail-reorder:v1";
 export const LEFT_PANEL_DEFAULT = 280;
 export const LEFT_PANEL_MIN = 128;
 export const LEFT_PANEL_MAX = 400;

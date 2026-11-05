@@ -61,6 +61,8 @@ export const messages = {
   "app.rail.settingsNotice": "設定。{notice}",
   "app.rail.more": "その他",
   "app.rail.pinPage": "{name}をバーに固定",
+  "app.rail.reorderHint": "Alt+上矢印 または Alt+下矢印 でこのアイコンをレール内で移動",
+  "app.rail.reorderMoved": "{name} を {total} 件中 {position} 番目へ移動",
   "app.page.serverFallback": "サーバー",
   "app.help.label": "ヘルプ",
   "app.help.whatsNew": "新機能",

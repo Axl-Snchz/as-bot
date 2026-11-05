@@ -60,6 +60,9 @@ export const messages = {
   "app.rail.settingsNotice": "Einstellungen. {notice}",
   "app.rail.more": "Mehr",
   "app.rail.pinPage": "{name} an die Leiste anheften",
+  "app.rail.reorderHint":
+    "Drücke Alt+Pfeil nach oben oder Alt+Pfeil nach unten, um dieses Symbol in der Leiste zu verschieben",
+  "app.rail.reorderMoved": "{name} an Position {position} von {total} verschoben",
   "app.page.serverFallback": "Server",
   "app.help.label": "Hilfe",
   "app.help.whatsNew": "Neuigkeiten",

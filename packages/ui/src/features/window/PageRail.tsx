@@ -24,7 +24,24 @@ import {
 } from "@openbot/ui/features/account/account-usage-view";
 import { useText } from "@openbot/ui/text";
 import { Dynamic, type JSX } from "@solidjs/web";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, Show } from "solid-js";
+
+interface RailButtonNativeProps {
+  draggable?: "true" | "false";
+  "data-rail-reorder-id"?: string | undefined;
+  "data-rail-draggable"?: string | undefined;
+  "data-rail-dragging"?: string | undefined;
+  "data-rail-drop-target"?: string | undefined;
+  "aria-describedby"?: string | undefined;
+  "aria-keyshortcuts"?: string | undefined;
+  registerButton?: ((button: HTMLButtonElement) => void) | undefined;
+  onClick?: ((event: MouseEvent & { currentTarget: HTMLButtonElement; target: Element }) => void) | undefined;
+  onDragStart?: ((event: DragEvent & { currentTarget: HTMLButtonElement; target: Element }) => void) | undefined;
+  onDragOver?: ((event: DragEvent & { currentTarget: HTMLButtonElement; target: Element }) => void) | undefined;
+  onDrop?: ((event: DragEvent & { currentTarget: HTMLButtonElement; target: Element }) => void) | undefined;
+  onDragEnd?: ((event: DragEvent & { currentTarget: HTMLButtonElement; target: Element }) => void) | undefined;
+  onKeyDown?: ((event: KeyboardEvent & { currentTarget: HTMLButtonElement; target: Element }) => void) | undefined;
+}
 
 /** One rail button. Its name shows as a tooltip, unless it has a `card`: the card shows instead. */
 function RailButton(props: {
@@ -33,6 +50,8 @@ function RailButton(props: {
   card?: () => JSX.Element;
   current?: boolean;
   class?: string;
+  tooltipSuppressed?: boolean;
+  buttonProps?: RailButtonNativeProps;
   onClick: (button: HTMLElement) => void;
   children: JSX.Element;
 }) {
@@ -43,13 +62,36 @@ function RailButton(props: {
       class={props.class ? `window-rail-button ${props.class}` : "window-rail-button"}
       aria-label={props.label}
       aria-current={props.current ? "page" : undefined}
-      onClick={(event) => props.onClick(event.currentTarget)}
+      draggable={props.buttonProps?.draggable}
+      data-rail-reorder-id={props.buttonProps?.["data-rail-reorder-id"]}
+      data-rail-draggable={props.buttonProps?.["data-rail-draggable"]}
+      data-rail-dragging={props.buttonProps?.["data-rail-dragging"]}
+      data-rail-drop-target={props.buttonProps?.["data-rail-drop-target"]}
+      aria-describedby={props.buttonProps?.["aria-describedby"]}
+      aria-keyshortcuts={props.buttonProps?.["aria-keyshortcuts"]}
+      ref={props.buttonProps?.registerButton}
+      onDragStart={props.buttonProps?.onDragStart}
+      onDragOver={props.buttonProps?.onDragOver}
+      onDrop={props.buttonProps?.onDrop}
+      onDragEnd={props.buttonProps?.onDragEnd}
+      onKeyDown={props.buttonProps?.onKeyDown}
+      onClick={(event: MouseEvent & { currentTarget: HTMLButtonElement; target: Element }) => {
+        props.buttonProps?.onClick?.(event);
+        if (!event.defaultPrevented) props.onClick(event.currentTarget);
+      }}
     >
       {props.children}
     </Button>
   );
   return (
-    <Show when={props.card} fallback={<MotionTooltip content={props.label}>{button()}</MotionTooltip>}>
+    <Show
+      when={props.card}
+      fallback={
+        <MotionTooltip content={props.label} suppressed={props.tooltipSuppressed}>
+          {button()}
+        </MotionTooltip>
+      }
+    >
       {(card) => (
         <MotionTooltip
           content={card()()}
@@ -57,6 +99,7 @@ function RailButton(props: {
           placement="right-end"
           openDelay={250}
           closeDelay={75}
+          suppressed={props.tooltipSuppressed}
         >
           {button()}
         </MotionTooltip>
@@ -119,6 +162,8 @@ function UsageRings(props: {
   row: AccountUsageProviderRow;
   shared: readonly AccountUsageProviderRow[];
   onOpen: (button: HTMLElement) => void;
+  buttonProps?: RailButtonNativeProps;
+  tooltipSuppressed?: boolean;
 }) {
   const { t, format } = useText();
   const rows = () => [props.row, ...props.shared];
@@ -148,6 +193,8 @@ function UsageRings(props: {
         />
       )}
       class="window-rail-usage"
+      tooltipSuppressed={props.tooltipSuppressed}
+      buttonProps={props.buttonProps}
       onClick={props.onOpen}
     >
       <UsageRingIcon tracks={windows().map((window) => ({ percent: window.remainingPercent, tone: window.tone }))} />
@@ -182,7 +229,12 @@ export interface CustomAgentUsageRailRow {
  * One saved custom agent in the rail. Copilot quota uses the same ring treatment as built-in providers,
  * with remaining percentage from credits counters.
  */
-function CustomAgentUsageButton(props: { row: CustomAgentUsageRailRow; onOpen: (button: HTMLElement) => void }) {
+function CustomAgentUsageButton(props: {
+  row: CustomAgentUsageRailRow;
+  onOpen: (button: HTMLElement) => void;
+  buttonProps?: RailButtonNativeProps;
+  tooltipSuppressed?: boolean;
+}) {
   const text = useText();
   const { t } = text;
   const readyQuota = () => (props.row.quota?.state === "ready" ? props.row.quota : null);
@@ -238,12 +290,27 @@ function CustomAgentUsageButton(props: { row: CustomAgentUsageRailRow; onOpen: (
     <Show
       when={copilotUsageRow()}
       fallback={
-        <RailButton label={usageLabel()} card={card} class="window-rail-usage" onClick={props.onOpen}>
+        <RailButton
+          label={usageLabel()}
+          card={card}
+          class="window-rail-usage"
+          onClick={props.onOpen}
+          buttonProps={props.buttonProps}
+          tooltipSuppressed={props.tooltipSuppressed}
+        >
           <ProviderLogo provider={props.row.providerLogo} class="window-rail-usage-logo window-rail-agent-usage-logo" />
         </RailButton>
       }
     >
-      {(row) => <UsageRings row={row()} shared={[]} onOpen={props.onOpen} />}
+      {(row) => (
+        <UsageRings
+          row={row()}
+          shared={[]}
+          onOpen={props.onOpen}
+          buttonProps={props.buttonProps}
+          tooltipSuppressed={props.tooltipSuppressed}
+        />
+      )}
     </Show>
   );
 }
@@ -280,6 +347,10 @@ export interface PageRailProps {
   usageRows: readonly AccountUsageProviderRow[];
   /** The custom agents on this computer, with their last usage answer when one is available. Absent on the web. */
   customAgentUsage?: readonly CustomAgentUsageRailRow[] | undefined;
+  /** The saved order of usage and custom-agent buttons in the lower rail group. */
+  reorderableOrder?: readonly string[] | undefined;
+  /** Saves the order of usage and custom-agent buttons in the lower rail group. */
+  onReorderableOrderChange?: ((order: readonly string[]) => void) | undefined;
   onAgents: () => void;
   /** Absent when the server has no routines. */
   onRoutines?: (() => void) | undefined;
@@ -302,6 +373,34 @@ export interface PageRailProps {
    * `href`, the logo is a link to the OpenBot site.
    */
   logo?: { variant: AppLogoVariant; href?: string | undefined } | undefined;
+}
+
+type ReorderableRailEntry =
+  | {
+      id: string;
+      kind: "usage";
+      label: string;
+      row: AccountUsageProviderRow;
+      shared: readonly AccountUsageProviderRow[];
+    }
+  | {
+      id: string;
+      kind: "custom-agent";
+      label: string;
+      row: CustomAgentUsageRailRow;
+    };
+
+/**
+ * Saved entries that still exist keep their saved order. New entries are appended by their current
+ * order. Missing entries are dropped.
+ */
+export function mergePageRailReorderableIds(current: readonly string[], saved: readonly string[]): string[] {
+  const currentSet = new Set(current);
+  const merged = saved.filter((id, index) => currentSet.has(id) && saved.indexOf(id) === index);
+  for (const id of current) {
+    if (!merged.includes(id)) merged.push(id);
+  }
+  return merged;
 }
 
 /** A page that the user can pin to the rail. */
@@ -412,6 +511,18 @@ function RailLogo(props: { variant: AppLogoVariant; href: string | undefined }) 
  */
 export function PageRail(props: PageRailProps) {
   const { t } = useText();
+  const reorderShortcutId = `page-rail-reorder-shortcuts-${createUniqueId()}`;
+  const [draggedId, setDraggedId] = createSignal<string | null>(null);
+  const [dragOverId, setDragOverId] = createSignal<string | null>(null);
+  const [announcement, setAnnouncement] = createSignal("");
+  const [suppressedClickId, setSuppressedClickId] = createSignal<string | null>(null);
+  const [localReorderableOrder, setLocalReorderableOrder] = createSignal<readonly string[]>([]);
+  const reorderableButtons = new Map<string, HTMLButtonElement>();
+  let clearSuppressedClickTimer: number | null = null;
+  onCleanup(() => {
+    if (clearSuppressedClickTimer !== null && typeof window !== "undefined")
+      window.clearTimeout(clearSuppressedClickTimer);
+  });
   /**
    * One ring per reading, except a reading that counts the quota of another provider's own sign-in,
    * such as Cursor on a merged Grok plan: that ring's card lists it instead.
@@ -458,6 +569,160 @@ export function PageRail(props: PageRailProps) {
     list.push({ id: "usage", label: t("app.rail.usage"), icon: ChartArea, open: props.onUsage });
     return list;
   });
+  const reorderableEntries = createMemo((): ReorderableRailEntry[] => [
+    ...rings().map((ring) => ({
+      id: `usage:${accountUsageRowKey(ring.row)}`,
+      kind: "usage" as const,
+      label: ring.row.name,
+      row: ring.row,
+      shared: ring.shared,
+    })),
+    ...(props.customAgentUsage ?? []).map((row) => ({
+      id: `custom-agent:${row.id}`,
+      kind: "custom-agent" as const,
+      label: row.name,
+      row,
+    })),
+  ]);
+  const orderedReorderableEntries = createMemo(() => {
+    const entries = reorderableEntries();
+    const current = entries.map((entry) => entry.id);
+    const order = mergePageRailReorderableIds(current, props.reorderableOrder ?? localReorderableOrder());
+    const byId = new Map(entries.map((entry) => [entry.id, entry]));
+    return order.flatMap((id) => {
+      const entry = byId.get(id);
+      return entry ? [entry] : [];
+    });
+  });
+  createEffect(
+    () => ({ controlled: props.reorderableOrder, current: reorderableEntries().map((entry) => entry.id) }),
+    ({ controlled, current }) => {
+      if (controlled !== undefined) return;
+      setLocalReorderableOrder((saved) => mergePageRailReorderableIds(current, saved));
+    },
+  );
+  function setReorderableOrder(next: readonly string[]): void {
+    const current = reorderableEntries().map((entry) => entry.id);
+    const merged = mergePageRailReorderableIds(current, next);
+    if (props.onReorderableOrderChange) props.onReorderableOrderChange(merged);
+    else setLocalReorderableOrder(merged);
+  }
+  function moveReorderable(sourceId: string, targetId: string): boolean {
+    if (sourceId === targetId) return false;
+    const ids = orderedReorderableEntries().map((entry) => entry.id);
+    const sourceIndex = ids.indexOf(sourceId);
+    const targetIndex = ids.indexOf(targetId);
+    if (sourceIndex < 0 || targetIndex < 0) return false;
+    ids.splice(sourceIndex, 1);
+    ids.splice(targetIndex, 0, sourceId);
+    setReorderableOrder(ids);
+    const moved = orderedReorderableEntries().find((entry) => entry.id === sourceId);
+    setAnnouncement(
+      t("app.rail.reorderMoved", {
+        name: moved?.label ?? "",
+        position: targetIndex + 1,
+        total: ids.length,
+      }),
+    );
+    return true;
+  }
+  function moveReorderableByStep(id: string, step: -1 | 1): void {
+    const ids = orderedReorderableEntries().map((entry) => entry.id);
+    const index = ids.indexOf(id);
+    const target = index + step;
+    const targetId = ids[target];
+    if (index < 0 || !targetId) return;
+    if (!moveReorderable(id, targetId)) return;
+    queueMicrotask(() => {
+      const focusMoved = () => {
+        const mappedButton = reorderableButtons.get(id);
+        if (mappedButton && document.contains(mappedButton)) {
+          mappedButton.focus();
+          return;
+        }
+        for (const button of document.querySelectorAll<HTMLButtonElement>("[data-rail-reorder-id]")) {
+          if (button.getAttribute("data-rail-reorder-id") !== id) continue;
+          button.focus();
+          break;
+        }
+      };
+      if (typeof window !== "undefined" && "requestAnimationFrame" in window) window.requestAnimationFrame(focusMoved);
+      else focusMoved();
+    });
+  }
+  function stopDragging(): void {
+    setDraggedId(null);
+    setDragOverId(null);
+  }
+  function clearSuppressedClick(id: string): void {
+    setSuppressedClickId((current) => (current === id ? null : current));
+  }
+  function scheduleSuppressedClickClear(id: string): void {
+    if (typeof window === "undefined") {
+      clearSuppressedClick(id);
+      return;
+    }
+    if (clearSuppressedClickTimer !== null) window.clearTimeout(clearSuppressedClickTimer);
+    clearSuppressedClickTimer = window.setTimeout(() => {
+      clearSuppressedClick(id);
+      clearSuppressedClickTimer = null;
+    }, 0);
+  }
+  function reorderableButtonProps(id: string): RailButtonNativeProps {
+    return {
+      draggable: "true",
+      "data-rail-reorder-id": id,
+      "data-rail-draggable": "true",
+      "data-rail-dragging": draggedId() === id ? "" : undefined,
+      "data-rail-drop-target": dragOverId() === id ? "" : undefined,
+      "aria-describedby": reorderShortcutId,
+      "aria-keyshortcuts": "Alt+ArrowUp Alt+ArrowDown",
+      registerButton: (button) => {
+        reorderableButtons.set(id, button);
+      },
+      onClick: (event) => {
+        if (suppressedClickId() !== id) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setSuppressedClickId(null);
+      },
+      onDragStart: (event) => {
+        if (suppressedClickId() !== null) setSuppressedClickId(null);
+        event.dataTransfer?.setData("text/plain", id);
+        if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+        setDraggedId(id);
+        setDragOverId(id);
+      },
+      onDragOver: (event) => {
+        const sourceId = draggedId() ?? event.dataTransfer?.getData("text/plain") ?? null;
+        if (!sourceId) return;
+        if (!draggedId()) setDraggedId(sourceId);
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+        if (dragOverId() !== id) setDragOverId(id);
+      },
+      onDrop: (event) => {
+        event.preventDefault();
+        const sourceId = draggedId() ?? event.dataTransfer?.getData("text/plain") ?? null;
+        if (!sourceId) return;
+        if (moveReorderable(sourceId, id)) {
+          setSuppressedClickId(sourceId);
+          scheduleSuppressedClickClear(sourceId);
+        }
+        stopDragging();
+      },
+      onDragEnd: () => {
+        const suppressedId = suppressedClickId();
+        stopDragging();
+        if (suppressedId) scheduleSuppressedClickClear(suppressedId);
+      },
+      onKeyDown: (event) => {
+        if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
+        event.preventDefault();
+        moveReorderableByStep(id, event.key === "ArrowUp" ? -1 : 1);
+      },
+    };
+  }
   return (
     <nav class="window-rail" aria-label={t("app.rail.label")} hidden={props.hidden}>
       <Show when={props.logo}>{(logo) => <RailLogo variant={logo().variant} href={logo().href} />}</Show>
@@ -474,13 +739,45 @@ export function PageRail(props: PageRailProps) {
         </For>
         <RailMoreMenu pages={pages()} current={props.current} pinned={props.pinned} onPinChange={props.onPinChange} />
       </div>
-      <div class="window-rail-group">
-        {/* A status update builds new rows. The key keeps each ring, and its open hover card, mounted. */}
-        <For each={rings()} keyed={(ring) => accountUsageRowKey(ring.row)}>
-          {(ring) => <UsageRings row={ring().row} shared={ring().shared} onOpen={props.onUsage} />}
-        </For>
-        <For each={props.customAgentUsage ?? []} keyed={(row) => row.id}>
-          {(row) => <CustomAgentUsageButton row={row()} onOpen={props.onUsage} />}
+      <div class="window-rail-group window-rail-reorder-group" data-rail-dragging={draggedId() ? "" : undefined}>
+        <For each={orderedReorderableEntries()} keyed={(entry) => entry.id}>
+          {(entry) => {
+            const usage = () => {
+              const value = entry();
+              return value.kind === "usage" ? value : null;
+            };
+            const custom = () => {
+              const value = entry();
+              return value.kind === "custom-agent" ? value : null;
+            };
+            return (
+              <Show
+                when={usage()}
+                fallback={
+                  <Show when={custom()}>
+                    {(item) => (
+                      <CustomAgentUsageButton
+                        row={item().row}
+                        onOpen={props.onUsage}
+                        buttonProps={reorderableButtonProps(item().id)}
+                        tooltipSuppressed={Boolean(draggedId())}
+                      />
+                    )}
+                  </Show>
+                }
+              >
+                {(item) => (
+                  <UsageRings
+                    row={item().row}
+                    shared={item().shared}
+                    onOpen={props.onUsage}
+                    buttonProps={reorderableButtonProps(item().id)}
+                    tooltipSuppressed={Boolean(draggedId())}
+                  />
+                )}
+              </Show>
+            );
+          }}
         </For>
         <Show when={props.onMarketplace}>
           {(onMarketplace) => (
@@ -509,6 +806,12 @@ export function PageRail(props: PageRailProps) {
           </Show>
         </RailButton>
       </div>
+      <span id={reorderShortcutId} class="sr-only">
+        {t("app.rail.reorderHint")}
+      </span>
+      <span class="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {announcement()}
+      </span>
     </nav>
   );
 }

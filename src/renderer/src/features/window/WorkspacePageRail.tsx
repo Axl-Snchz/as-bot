@@ -69,6 +69,8 @@ export function WorkspacePageRail(props: { hidden: boolean }) {
       current={current()}
       pinned={layout.railPinned()}
       onPinChange={layout.setRailPinned}
+      reorderableOrder={layout.railReorder()}
+      onReorderableOrderChange={layout.setRailReorder}
       usageRows={usageRows()}
       customAgentUsage={localAgentUsage()}
       onAgents={() => showSidebarView("agents")}

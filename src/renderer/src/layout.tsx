@@ -15,6 +15,7 @@ import {
   MAC_SERVER_RAIL_WIDTH,
   NARROW_SERVER_RAIL_WIDTH,
   RAIL_PINS_STORAGE_KEY,
+  RAIL_REORDER_STORAGE_KEY,
   SERVER_RAIL_WIDTH,
   SERVER_VIEW_STORAGE_KEY,
   SIDEBAR_VIEW_STORAGE_KEY,
@@ -51,6 +52,7 @@ const RAIL_PINNED_BY_DEFAULT: ReadonlySet<PageRailPinnablePage> = new Set(["task
 
 // A record, not an object: a page that only another version knows keeps its choice when this version saves.
 const railPinChoicesSchema = z.record(z.string(), z.boolean().optional().catch(undefined));
+const railReorderSchema = z.array(z.string().trim().min(1));
 
 type RailPinChoices = z.infer<typeof railPinChoicesSchema>;
 
@@ -66,6 +68,30 @@ function readRailPinChoices(): RailPinChoices {
     return parsed.success ? parsed.data : {};
   } catch {
     return {};
+  }
+}
+
+function normalizeRailReorder(value: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const rawId of value) {
+    const id = rawId.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    normalized.push(id);
+  }
+  return normalized;
+}
+
+/** The saved order of usage and custom-agent buttons in the lower page rail group. */
+function readRailReorder(): string[] {
+  try {
+    const parsed = railReorderSchema.safeParse(
+      JSON.parse(window.localStorage.getItem(RAIL_REORDER_STORAGE_KEY) ?? "[]"),
+    );
+    return parsed.success ? normalizeRailReorder(parsed.data) : [];
+  } catch {
+    return [];
   }
 }
 
@@ -110,6 +136,7 @@ const Layout = createSimpleContext({
       window.localStorage.getItem(SIDEBAR_VIEW_STORAGE_KEY) === "routines" ? "routines" : "agents",
     );
     const [railPinChoices, setRailPinChoices] = createSignal<RailPinChoices>(readRailPinChoices());
+    const [railReorder, setRailReorderSignal] = createSignal<string[]>(readRailReorder());
     const railPinned = createMemo(() => {
       const choices = railPinChoices();
       return PAGE_RAIL_PINNABLE_PAGES.filter((page) => choices[page] ?? RAIL_PINNED_BY_DEFAULT.has(page));
@@ -142,6 +169,7 @@ const Layout = createSimpleContext({
     // Another window or browser tab can change the pins.
     function readRailPinsFromStorage(event: StorageEvent): void {
       if (event.key === null || event.key === RAIL_PINS_STORAGE_KEY) setRailPinChoices(readRailPinChoices());
+      if (event.key === null || event.key === RAIL_REORDER_STORAGE_KEY) setRailReorderSignal(readRailReorder());
     }
 
     onSettled(() => {
@@ -175,6 +203,16 @@ const Layout = createSimpleContext({
       }
     }
 
+    function setRailReorder(order: readonly string[]): void {
+      const normalized = normalizeRailReorder(order);
+      setRailReorderSignal(normalized);
+      try {
+        window.localStorage.setItem(RAIL_REORDER_STORAGE_KEY, JSON.stringify(normalized));
+      } catch {
+        // Blocked or full storage keeps the order for this window only.
+      }
+    }
+
     function expandSidebar(): void {
       setSidebarCollapsed(false);
       setLeftPanelAutoCompact(false);
@@ -193,6 +231,8 @@ const Layout = createSimpleContext({
       setSidebarView,
       railPinned,
       setRailPinned,
+      railReorder,
+      setRailReorder,
     };
   },
 });
