@@ -52,7 +52,7 @@ import { ContentExitMotion } from "@openbot/ui/menu-motion";
 import { cx } from "@openbot/ui/utils";
 import type { JSX } from "@solidjs/web";
 import { createEffect, createMemo, createSignal, For, onSettled, Show, untrack } from "solid-js";
-import { AccountUsageWindowList } from "../features/account/AccountUsageDetails";
+import { RESET_CLOCK_MS } from "../features/account/AccountUsageDetails";
 import {
   type AccountUsageProviderRow,
   accountUsageProviderRows,
@@ -65,6 +65,7 @@ import {
   type CustomAgentUsageRow,
   customAgentCopilotUsageRow,
 } from "../features/account/custom-agent-usage";
+import { ProviderModelUsagePreview } from "../features/account/ProviderModelUsagePreview";
 import { AccountUsageRingIcon, accountUsageRingGroups, accountUsageRingTracks } from "../features/account/usage-rings";
 import { currentText, type TextValue, useText } from "../text";
 import { createScrollFades } from "./createScrollFades";
@@ -212,27 +213,6 @@ const TRIGGER_SWAP: SwapMotion = {
   // The old text fades early: the box already eases to the new width and does not clip it.
   leave: { duration: 180, easing: "ease" },
 };
-
-export function ProviderModelUsagePreview(props: {
-  rows: readonly AccountUsageProviderRow[];
-  now: number;
-  label: string;
-}) {
-  return (
-    <Show when={props.rows.length > 0}>
-      <section class="provider-model-usage-preview" aria-label={props.label}>
-        <For each={props.rows}>
-          {(usage) => (
-            <div class="provider-model-usage-preview-row">
-              <strong>{usage.name}</strong>
-              <AccountUsageWindowList windows={usage.windows} now={props.now} />
-            </div>
-          )}
-        </For>
-      </section>
-    </Show>
-  );
-}
 
 export function ProviderModelPicker(props: ProviderModelPickerProps) {
   const text = useText();
@@ -515,7 +495,7 @@ export function ProviderModelPicker(props: ProviderModelPickerProps) {
     () => open(),
     (isOpen) => {
       if (!isOpen) return;
-      const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+      const timer = window.setInterval(() => setNow(Date.now()), RESET_CLOCK_MS);
       return () => window.clearInterval(timer);
     },
   );

@@ -453,24 +453,6 @@
   transform: rotate(-90deg);
 }
 
-/* Duplicated from page-rail.css: the picker rail stylesheet is scoped and cannot inherit that file. */
-.provider-model-rail-button .window-rail-usage-track {
-  stroke: currentcolor;
-  opacity: 0.15;
-}
-
-.provider-model-rail-button .window-rail-usage-arc {
-  stroke: var(--openbot-success);
-}
-
-.provider-model-rail-button .window-rail-usage-arc[data-usage-tone="warning"] {
-  stroke: var(--openbot-warning);
-}
-
-.provider-model-rail-button .window-rail-usage-arc[data-usage-tone="critical"] {
-  stroke: var(--openbot-danger);
-}
-
 .provider-model-rail-button-usage .provider-model-mark {
   opacity: 0.9;
 }

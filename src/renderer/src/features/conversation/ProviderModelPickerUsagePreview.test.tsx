@@ -90,7 +90,7 @@ function previewRegion(): HTMLElement | null {
 }
 
 function arcDasharray(tab: Element): string | null {
-  return tab.querySelector<SVGCircleElement>(".window-rail-usage-arc")?.getAttribute("stroke-dasharray") ?? null;
+  return tab.querySelector<SVGCircleElement>(".account-usage-ring-arc")?.getAttribute("stroke-dasharray") ?? null;
 }
 
 function renderPicker(props?: {
@@ -242,7 +242,7 @@ describe("ProviderModelPicker usage integration", () => {
 
     const customTab = tabByLabel(/Custom/u);
     expect(customTab.className).toContain("provider-model-rail-button-usage");
-    const customArc = customTab.querySelector<SVGCircleElement>(".window-rail-usage-arc");
+    const customArc = customTab.querySelector<SVGCircleElement>(".account-usage-ring-arc");
     expect(customArc?.getAttribute("stroke-dasharray")).toMatch(/^3(?:\.0+)? 100$/u);
     expect(customArc?.getAttribute("data-usage-tone")).toBe("critical");
 

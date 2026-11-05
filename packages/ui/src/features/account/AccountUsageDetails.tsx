@@ -12,7 +12,7 @@ import {
 } from "./account-usage-view";
 
 /** The reset countdown shows minutes, so a half-minute tick keeps it current. */
-const RESET_CLOCK_MS = 30_000;
+export const RESET_CLOCK_MS = 30_000;
 
 export function AccountUsageDetails(props: {
   rows: AccountUsageProviderRow[];

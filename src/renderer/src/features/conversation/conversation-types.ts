@@ -30,6 +30,7 @@ import type {
   WorkspaceDirectory,
 } from "@openbot/contracts/ipc";
 import type { ConversationUiBlock } from "@openbot/contracts/ui-blocks";
+// Keep this type on the picker's public entrypoint so this feature follows the same contract as runtime imports.
 import type { ProviderModelPickerCustomAgentUsageRow } from "@openbot/ui/components/ProviderModelPicker";
 import type { AgentMessage, AgentProfile } from "@openbot/ui/data";
 import type { BrowserViewRuntime } from "@openbot/ui/features/browser/BrowserLiveView";

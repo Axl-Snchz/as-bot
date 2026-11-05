@@ -53,7 +53,7 @@ export function AccountUsageRingIcon(props: {
   const outerRadius = (RING.size - RING.stroke) / 2;
   return (
     <svg
-      class={props.class ? `window-rail-usage-ring ${props.class}` : "window-rail-usage-ring"}
+      class={props.class ? `account-usage-ring-svg ${props.class}` : "account-usage-ring-svg"}
       viewBox={`0 0 ${RING.size} ${RING.size}`}
       fill="none"
       aria-hidden="true"
@@ -62,7 +62,7 @@ export function AccountUsageRingIcon(props: {
         {(track, index) => (
           <g>
             <circle
-              class="window-rail-usage-track"
+              class="account-usage-ring-track"
               cx={RING.size / 2}
               cy={RING.size / 2}
               r={outerRadius - index * RING.spacing}
@@ -70,7 +70,7 @@ export function AccountUsageRingIcon(props: {
             />
             <Show when={track().percent > 0}>
               <circle
-                class="window-rail-usage-arc"
+                class="account-usage-ring-arc"
                 data-usage-tone={track().tone}
                 cx={RING.size / 2}
                 cy={RING.size / 2}

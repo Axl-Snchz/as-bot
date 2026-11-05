@@ -33,7 +33,7 @@ function copilotUsageButton(): HTMLButtonElement {
 }
 
 function usageArc(button: HTMLElement): SVGCircleElement | null {
-  return button.querySelector<SVGCircleElement>(".window-rail-usage-arc");
+  return button.querySelector<SVGCircleElement>(".account-usage-ring-arc");
 }
 
 describe("PageRail custom Copilot usage", () => {
@@ -130,7 +130,7 @@ describe("PageRail custom Copilot usage", () => {
     expect(usageButtons).toHaveLength(1);
     expect(usageButtons[0]?.getAttribute("aria-label")).toMatch(/Grok/u);
     expect(usageButtons[0]?.getAttribute("aria-label")).toMatch(/Cursor/u);
-    expect(usageButtons[0]?.querySelector(".window-rail-usage-arc")?.getAttribute("stroke-dasharray")).toBe("18 100");
-    expect(usageButtons[0]?.querySelector(".window-rail-usage-arc")?.getAttribute("data-usage-tone")).toBe("critical");
+    expect(usageButtons[0]?.querySelector(".account-usage-ring-arc")?.getAttribute("stroke-dasharray")).toBe("18 100");
+    expect(usageButtons[0]?.querySelector(".account-usage-ring-arc")?.getAttribute("data-usage-tone")).toBe("critical");
   });
 });

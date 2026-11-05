@@ -124,7 +124,7 @@
   border-radius: var(--openbot-radius-pill);
 }
 
-.window-rail-button .window-rail-usage-ring {
+.window-rail-button .account-usage-ring-svg {
   position: absolute;
   inset: 1px;
   width: 34px;
@@ -137,23 +137,6 @@
   height: var(--openbot-icon-xs);
   overflow: visible;
   fill: var(--openbot-provider-current);
-}
-
-.window-rail-usage-track {
-  stroke: currentcolor;
-  opacity: 0.15;
-}
-
-.window-rail-usage-arc {
-  stroke: var(--openbot-success);
-}
-
-.window-rail-usage-arc[data-usage-tone="warning"] {
-  stroke: var(--openbot-warning);
-}
-
-.window-rail-usage-arc[data-usage-tone="critical"] {
-  stroke: var(--openbot-danger);
 }
 
 /* The usage of a custom agent without quota data: logo with no ring, at rail-icon size. */
