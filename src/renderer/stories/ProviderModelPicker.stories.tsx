@@ -1,3 +1,4 @@
+import { type AgentStatus, DEFAULT_PROVIDER_ACCOUNT_ID } from "@openbot/contracts/ipc";
 import { ProviderModelPicker } from "@openbot/ui/components/ProviderModelPicker";
 import { fn } from "storybook/test";
 import type { Meta, StoryObj } from "storybook-solidjs-vite";
@@ -311,5 +312,73 @@ export const UsagePreviewCopilotCustomAgent: Story = {
         quota: { state: "no-data" },
       },
     ],
+  },
+};
+
+const codexAccountsStatus: AgentStatus = {
+  ...STORY_AGENT_STATUS,
+  providers: STORY_AGENT_STATUS.providers?.map((provider) =>
+    provider.id === "codex"
+      ? {
+          ...provider,
+          accounts: [
+            {
+              id: DEFAULT_PROVIDER_ACCOUNT_ID,
+              label: null,
+              email: "owner@example.com",
+              state: "connected",
+              message: null,
+            },
+            { id: "a1111111111111111", label: "Work", email: "work@example.com", state: "connected", message: null },
+          ],
+        }
+      : provider,
+  ),
+};
+
+/**
+ * Two Codex accounts, each with a 5-hour and a weekly window. The panel header names the account, so
+ * each preview shows bars, amounts left and resets, and the names only tell apart the rows of a tab.
+ */
+export const UsagePreviewMultipleAccounts: Story = {
+  args: {
+    ...args,
+    agentStatus: codexAccountsStatus,
+    accountChoice: true,
+    accountUsage: {
+      limits: [
+        {
+          id: "codex",
+          primary: { usedPercent: 30, windowDurationMins: 300, resetsAt: spentWeekResetsAt - 2 * 24 * 60 * 60 },
+          secondary: { usedPercent: 45, windowDurationMins: 10_080, resetsAt: spentWeekResetsAt + 2 * 24 * 60 * 60 },
+        },
+        {
+          id: "codex",
+          accountId: "a1111111111111111",
+          primary: { usedPercent: 92, windowDurationMins: 300, resetsAt: spentWeekResetsAt - 2 * 24 * 60 * 60 },
+          secondary: { usedPercent: 81, windowDurationMins: 10_080, resetsAt: spentWeekResetsAt + 2 * 24 * 60 * 60 },
+        },
+      ],
+    },
+  },
+};
+
+/** Resets 12 days and 23 hours out: the longest countdown the picker shows, which must not cut off. */
+export const UsagePreviewLongReset: Story = {
+  args: {
+    ...args,
+    accountUsage: {
+      limits: [
+        {
+          id: "codex",
+          primary: null,
+          secondary: {
+            usedPercent: 60,
+            windowDurationMins: 10_080,
+            resetsAt: Math.floor(Date.now() / 1_000) + (12 * 24 + 23) * 60 * 60,
+          },
+        },
+      ],
+    },
   },
 };

@@ -173,8 +173,10 @@ describe("ProviderModelPicker usage integration", () => {
     const defaultPreview = defaultPanel.querySelector<HTMLElement>(".provider-model-usage-preview");
     if (!defaultPreview) throw new Error("Default preview missing");
     expect(defaultPreview).toBeVisible();
-    expect(within(defaultPreview).getByText(/owner@example\.com/u)).toBeInTheDocument();
+    // The panel header already names the account, so a single row shows its bars and reset only.
+    expect(within(defaultPreview).queryByText(/owner@example\.com/u)).toBeNull();
     expect(within(defaultPreview).getByText("70% left")).toBeInTheDocument();
+    expect(within(defaultPreview).getByText("1d 0h")).toBeInTheDocument();
     const defaultFills = [...defaultPreview.querySelectorAll<HTMLElement>(".account-usage-window-fill")].map(
       (node) => node.style.inlineSize,
     );

@@ -658,14 +658,18 @@
   min-width: 0;
 }
 
+/* The gap between columns is the only space between a label, its bar and the amount left. */
 .provider-model-usage-preview .account-usage-windows {
   grid-column: 1 / -1;
-  grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
-  row-gap: var(--openbot-space-0-5);
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  column-gap: var(--openbot-space-2);
+  row-gap: var(--openbot-space-1);
 }
 
 .provider-model-usage-preview .account-usage-window {
   grid-template-columns: subgrid;
+  column-gap: var(--openbot-space-2);
+  row-gap: var(--openbot-space-0-5);
 }
 
 .provider-model-usage-preview .account-usage-window-label,
@@ -675,8 +679,14 @@
   line-height: var(--openbot-leading-sm);
 }
 
-.provider-model-usage-preview .account-usage-window-bar {
-  margin-inline: var(--openbot-space-2);
+/* The reset countdown has a line of its own, right-aligned, and may wrap rather than cut off. */
+.provider-model-usage-preview .account-usage-window-reset {
+  grid-column: 1 / -1;
+  justify-self: end;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: end;
 }
 
 .provider-model-empty > .ui-progress {

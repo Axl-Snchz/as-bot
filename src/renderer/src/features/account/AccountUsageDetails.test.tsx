@@ -32,4 +32,30 @@ describe("AccountUsageDetails", () => {
     expect(screen.getByText("Claude")).toBeInTheDocument();
     expect(screen.getByText("42% left")).toBeVisible();
   });
+
+  it("keeps the provider name on the rail row", () => {
+    const usage: AccountUsage = {
+      limits: [
+        {
+          id: "claude",
+          primary: { usedPercent: 58, windowDurationMins: 300, resetsAt: 2_000_000_000 },
+          secondary: null,
+        },
+      ],
+    };
+
+    render(() => (
+      <AccountUsageDetails
+        rows={accountUsageProviderRows(usage)}
+        loading={false}
+        error={null}
+        refreshActive={false}
+        refreshDisabled={false}
+        onRefresh={vi.fn()}
+        title={<h2 class="account-usage-popover-title">Usage</h2>}
+      />
+    ));
+
+    expect(screen.getByRole("listitem", { name: /^Claude/u })).toBeInTheDocument();
+  });
 });
