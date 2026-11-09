@@ -1,14 +1,26 @@
+import { agentProviderDescriptor } from "@openbot/contracts/agent-providers";
 import type { CustomAgentQuota, CustomAgentUsage } from "@openbot/contracts/ipc";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AgentClient } from "../agent-client";
 import type { CustomAgentConfig } from "../custom-acp-agents-client";
 import type { ProviderClientContext } from "../provider-drivers";
+import { COPILOT_ARGV, COPILOT_ENV, customAgentDiscoveryFolder } from "../provider-drivers";
+import { ProviderAccountStore } from "./provider-account-store";
 import { type ProviderHooks, ProviderRuntime } from "./provider-runtime";
 
-const { readCopilotQuotaMock, resolveAgentCommandMock, agentLaunchPathMock } = vi.hoisted(() => ({
+const {
+  readCopilotQuotaMock,
+  resolveAgentCommandMock,
+  agentLaunchPathMock,
+  resolveCopilotCliMock,
+  startAcpAuthenticationMock,
+} = vi.hoisted(() => ({
   readCopilotQuotaMock: vi.fn(),
   resolveAgentCommandMock: vi.fn(),
   agentLaunchPathMock: vi.fn(),
+  resolveCopilotCliMock: vi.fn(),
+  startAcpAuthenticationMock: vi.fn(),
 }));
 
 vi.mock("../copilot-quota", async (importOriginal) => {
@@ -23,7 +35,12 @@ vi.mock("../acp-agent-command", async (importOriginal) => {
 
 vi.mock("../cli", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../cli")>();
-  return { ...actual, agentLaunchPath: agentLaunchPathMock };
+  return { ...actual, agentLaunchPath: agentLaunchPathMock, resolveCopilotCli: resolveCopilotCliMock };
+});
+
+vi.mock("../acp-sign-in", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../acp-sign-in")>();
+  return { ...actual, startAcpAuthentication: startAcpAuthenticationMock };
 });
 
 function readyQuota(): CustomAgentQuota {
@@ -61,7 +78,10 @@ function createRuntime(options: {
   customAgents: () => readonly CustomAgentConfig[];
   agentEnvironment?: (inherited?: NodeJS.ProcessEnv) => Readonly<Record<string, string>>;
   isStopping?: () => boolean;
+  clientFactory?: (provider: AgentClient["provider"]) => AgentClient;
+  accounts?: ProviderAccountStore;
 }): ProviderRuntime {
+  const clientFactory = options.clientFactory;
   const hooks: ProviderHooks = {
     bindClient: () => undefined,
     onProvidersReady: () => Effect.void,
@@ -94,11 +114,83 @@ function createRuntime(options: {
     emitError: () => undefined,
     requestTimeoutMs: 1_000,
     preferredProvider: "codex",
-    clientFactory: null,
+    clientFactory: clientFactory ? (provider) => clientFactory(provider) : null,
     bundledExecutables: {},
     credentials,
     redactMcp: (text) => text,
+    ...(options.accounts ? { accounts: options.accounts } : {}),
   });
+}
+
+function createBuiltInClient(provider: AgentClient["provider"]): AgentClient {
+  const client: AgentClient = {
+    provider,
+    running: false,
+    start: () => undefined,
+    stop: () => Effect.void,
+    request: <T>(method: string, _params: unknown, decoder: (value: unknown) => T) => {
+      let response: unknown = {};
+      if (method === "initialize") response = {};
+      if (method === "account/read")
+        response = {
+          account: {
+            type: "chatgpt",
+            email: "copilot@example.com",
+            planType: "pro",
+          },
+          requiresOpenaiAuth: false,
+        };
+      if (method === "model/list") response = { data: [] };
+      return Effect.sync(() => decoder(response));
+    },
+    notify: () => undefined,
+    respond: () => undefined,
+    respondError: () => undefined,
+    on: () => client,
+    once: () => client,
+    off: () => client,
+  };
+  return client;
+}
+
+function createBuiltInSignedOutClient(provider: AgentClient["provider"]): AgentClient {
+  const client: AgentClient = {
+    provider,
+    running: false,
+    start: () => undefined,
+    stop: () => Effect.void,
+    request: <T>(method: string, _params: unknown, decoder: (value: unknown) => T) => {
+      let response: unknown = {};
+      if (method === "initialize") response = {};
+      if (method === "account/read") response = { account: null, requiresOpenaiAuth: false };
+      if (method === "model/list") response = { data: [] };
+      return Effect.sync(() => decoder(response));
+    },
+    notify: () => undefined,
+    respond: () => undefined,
+    respondError: () => undefined,
+    on: () => client,
+    once: () => client,
+    off: () => client,
+  };
+  return client;
+}
+
+async function initializeBuiltInCopilot(runtime: ProviderRuntime, launchPath: string | null = null): Promise<void> {
+  resolveCopilotCliMock.mockImplementationOnce(() =>
+    Effect.succeed({
+      executable: "/usr/local/bin/copilot",
+      version: "1.0.0",
+      source: "system",
+      launchPath: launchPath ?? undefined,
+    }),
+  );
+  await Effect.runPromise(runtime.refreshProvider("copilot"));
+}
+
+async function readBuiltInUsage(runtime: ProviderRuntime) {
+  const usage = await Effect.runPromise(runtime.usage());
+  return usage.limits.find((limit) => limit.id === "copilot")?.primary ?? null;
 }
 
 describe("ProviderRuntime customAgentUsage copilot cache", () => {
@@ -108,8 +200,18 @@ describe("ProviderRuntime customAgentUsage copilot cache", () => {
     readCopilotQuotaMock.mockReset();
     resolveAgentCommandMock.mockReset();
     agentLaunchPathMock.mockReset();
+    resolveCopilotCliMock.mockReset();
     resolveAgentCommandMock.mockImplementation((command: string) => Effect.succeed(command));
     agentLaunchPathMock.mockImplementation(() => Effect.succeed(null));
+    resolveCopilotCliMock.mockImplementation(() =>
+      Effect.succeed({
+        executable: "/usr/local/bin/copilot",
+        version: "1.0.0",
+        source: "system",
+      }),
+    );
+    startAcpAuthenticationMock.mockReset();
+    startAcpAuthenticationMock.mockImplementation(() => Effect.succeed({ done: Effect.void }));
   });
 
   afterEach(() => {
@@ -367,4 +469,253 @@ describe("ProviderRuntime customAgentUsage copilot cache", () => {
       expect(readCopilotQuotaMock).not.toHaveBeenCalled();
     },
   );
+
+  it("uses built-in Copilot launch config and reuses for five minutes", async () => {
+    const runtime = createRuntime({
+      customAgents: () => [],
+      agentEnvironment: () => ({ COPILOT_PROFILE: "main", EXTRA_FLAG: "1" }),
+      clientFactory: createBuiltInClient,
+    });
+    await initializeBuiltInCopilot(runtime, "/custom/path");
+    readCopilotQuotaMock.mockResolvedValue({ quota: readyQuota(), text: null });
+
+    const first = await readBuiltInUsage(runtime);
+    expect(first).not.toBeNull();
+    expect(readCopilotQuotaMock).toHaveBeenCalledTimes(1);
+    expect(readCopilotQuotaMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        executable: "/usr/local/bin/copilot",
+        args: COPILOT_ARGV,
+        launchPath: "/custom/path",
+        timeoutMs: 30_000,
+      }),
+    );
+    expect(readCopilotQuotaMock.mock.calls[0]?.[0]?.env).toMatchObject({
+      ...COPILOT_ENV,
+      COPILOT_PROFILE: "main",
+      EXTRA_FLAG: "1",
+    });
+    expect(readCopilotQuotaMock.mock.calls[0]?.[0]?.cwd).toBe(customAgentDiscoveryFolder("builtin-copilot-quota"));
+
+    vi.setSystemTime(new Date("2026-11-04T18:03:59.000Z"));
+    await readBuiltInUsage(runtime);
+    expect(readCopilotQuotaMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(new Date("2026-11-04T18:04:01.000Z"));
+    await readBuiltInUsage(runtime);
+    expect(readCopilotQuotaMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(new Date("2026-11-04T18:08:02.000Z"));
+    await readBuiltInUsage(runtime);
+    expect(readCopilotQuotaMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("deduplicates concurrent built-in Copilot polls", async () => {
+    vi.useRealTimers();
+    const runtime = createRuntime({ customAgents: () => [], clientFactory: createBuiltInClient });
+    await initializeBuiltInCopilot(runtime);
+    let resolveRead!: (value: { quota: CustomAgentQuota; text: string | null }) => void;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    readCopilotQuotaMock.mockImplementation(
+      () =>
+        new Promise<{ quota: CustomAgentQuota; text: string | null }>((resolve) => {
+          markStarted();
+          resolveRead = resolve;
+        }),
+    );
+
+    const first = readBuiltInUsage(runtime);
+    const second = readBuiltInUsage(runtime);
+    await started;
+    expect(readCopilotQuotaMock).toHaveBeenCalledTimes(1);
+    resolveRead({ quota: readyQuota(), text: null });
+
+    const [left, right] = await Promise.all([first, second]);
+    expect(left).toEqual(right);
+    expect(left).not.toBeNull();
+  });
+
+  it("clears built-in Copilot usage on ready→no-data→error after invalidation", async () => {
+    const runtime = createRuntime({ customAgents: () => [], clientFactory: createBuiltInClient });
+    await initializeBuiltInCopilot(runtime);
+    readCopilotQuotaMock
+      .mockResolvedValueOnce({ quota: readyQuota(), text: null })
+      .mockResolvedValueOnce({ quota: { state: "no-data" }, text: null })
+      .mockResolvedValueOnce({
+        quota: { state: "error", messageKey: "account.usage.value.unavailable" },
+        text: null,
+      });
+
+    const first = await Effect.runPromise(runtime.usage());
+    expect(first.limits).toHaveLength(1);
+
+    await Effect.runPromise(runtime.reloadAgentEnvironment());
+    const second = await Effect.runPromise(runtime.usage());
+    expect(second.limits).toEqual([]);
+
+    await Effect.runPromise(runtime.reloadAgentEnvironment());
+    const third = await Effect.runPromise(runtime.usage());
+    expect(third.limits).toEqual([]);
+    expect(readCopilotQuotaMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps built-in Copilot usage cache when only custom agents reload", async () => {
+    const runtime = createRuntime({ customAgents: () => [], clientFactory: createBuiltInClient });
+    await initializeBuiltInCopilot(runtime);
+    readCopilotQuotaMock.mockResolvedValue({ quota: readyQuota(), text: null });
+
+    await readBuiltInUsage(runtime);
+    expect(readCopilotQuotaMock).toHaveBeenCalledTimes(1);
+
+    await Effect.runPromise(runtime.reloadCustomAgents());
+    await readBuiltInUsage(runtime);
+    expect(readCopilotQuotaMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not spawn built-in Copilot usage reads while provider is off or signed out", async () => {
+    const offRuntime = createRuntime({ customAgents: () => [], clientFactory: createBuiltInClient });
+    await initializeBuiltInCopilot(offRuntime);
+    readCopilotQuotaMock.mockResolvedValue({ quota: readyQuota(), text: null });
+    await readBuiltInUsage(offRuntime);
+    expect(readCopilotQuotaMock).toHaveBeenCalledTimes(1);
+
+    await Effect.runPromise(offRuntime.setProviderOn("copilot", false));
+    const offUsage = await Effect.runPromise(offRuntime.usage());
+    expect(offUsage.limits).toEqual([]);
+    expect(readCopilotQuotaMock).toHaveBeenCalledTimes(1);
+
+    readCopilotQuotaMock.mockReset();
+    const signedOutRuntime = createRuntime({ customAgents: () => [], clientFactory: createBuiltInSignedOutClient });
+    await initializeBuiltInCopilot(signedOutRuntime);
+    const signedOutUsage = await Effect.runPromise(signedOutRuntime.usage());
+    expect(signedOutUsage.limits).toEqual([]);
+    expect(readCopilotQuotaMock).not.toHaveBeenCalled();
+  });
+
+  it("clears built-in Copilot usage after explicit Copilot sign-out transition", async () => {
+    const runtime = createRuntime({
+      customAgents: () => [],
+      clientFactory: createBuiltInClient,
+      accounts: new ProviderAccountStore("C:/tmp/provider-runtime-test-accounts.json", "C:/tmp/provider-runtime-test"),
+    });
+    await initializeBuiltInCopilot(runtime);
+    readCopilotQuotaMock.mockResolvedValueOnce({ quota: readyQuota(), text: null });
+
+    const beforeSignOut = await Effect.runPromise(runtime.usage());
+    expect(beforeSignOut.limits).toHaveLength(1);
+    expect(readCopilotQuotaMock).toHaveBeenCalledTimes(1);
+
+    await Effect.runPromise(runtime.signOutProvider("copilot"));
+
+    const afterSignOut = await Effect.runPromise(runtime.usage());
+    expect(afterSignOut.limits).toEqual([]);
+    expect(startAcpAuthenticationMock).toHaveBeenCalledTimes(1);
+    expect(readCopilotQuotaMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Copilot usage-limit diagnostics on upstream path (reportsUsage=false)", () => {
+    expect(agentProviderDescriptor("copilot").reportsUsage).toBe(false);
+  });
+
+  it("keeps Copilot usage-limit handling upstream by skipping post-limit usage refresh reads", async () => {
+    const runtime = createRuntime({ customAgents: () => [] });
+    const source = createBuiltInClient("copilot");
+    const requestSpy = vi.spyOn(source, "request");
+
+    await Effect.runPromise(runtime.refreshUsageAfterLimit(source));
+
+    expect(requestSpy).not.toHaveBeenCalled();
+    expect(readCopilotQuotaMock).not.toHaveBeenCalled();
+  });
+
+  it("invalidates built-in Copilot identity on reload and stale in-flight result cannot overwrite fresh identity", async () => {
+    vi.useRealTimers();
+    let profile = "old";
+    const runtime = createRuntime({
+      customAgents: () => [],
+      agentEnvironment: () => ({ COPILOT_PROFILE: profile }),
+      clientFactory: createBuiltInClient,
+    });
+    await initializeBuiltInCopilot(runtime);
+
+    let resolveStale!: () => void;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    readCopilotQuotaMock.mockImplementationOnce(
+      () =>
+        new Promise<{ quota: CustomAgentQuota; text: string | null }>((resolve) => {
+          markStarted();
+          resolveStale = () => resolve({ quota: readyQuota(), text: "stale" });
+        }),
+    );
+    readCopilotQuotaMock.mockResolvedValueOnce({ quota: readyQuota(), text: "fresh" });
+
+    const pendingStale = readBuiltInUsage(runtime);
+    await started;
+    expect(readCopilotQuotaMock).toHaveBeenCalledTimes(1);
+    profile = "new";
+    await Effect.runPromise(runtime.reloadAgentEnvironment());
+    const pendingFresh = readBuiltInUsage(runtime);
+    resolveStale();
+
+    await expect(pendingStale).resolves.toBeNull();
+    const fresh = await pendingFresh;
+    expect(fresh).not.toBeNull();
+    expect(readCopilotQuotaMock).toHaveBeenCalledTimes(2);
+
+    const reused = await readBuiltInUsage(runtime);
+    expect(reused).not.toBeNull();
+    expect(readCopilotQuotaMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("aborts only custom Copilot quota read when custom agents reload while built-in read is still active", async () => {
+    vi.useRealTimers();
+    const runtime = createRuntime({
+      customAgents: () => [copilotAgent("copilot-1")],
+      clientFactory: createBuiltInClient,
+    });
+    await initializeBuiltInCopilot(runtime);
+
+    let customStarted = false;
+    let builtInStarted = false;
+    let customAborted = false;
+    let builtInAborted = false;
+    let resolveBuiltIn!: (value: { quota: CustomAgentQuota; text: string | null }) => void;
+    readCopilotQuotaMock.mockImplementation((launch: { cwd: string; signal: AbortSignal }) => {
+      const builtIn = launch.cwd === customAgentDiscoveryFolder("builtin-copilot-quota");
+      if (builtIn) builtInStarted = true;
+      else customStarted = true;
+      return new Promise<{ quota: CustomAgentQuota; text: string | null }>((resolve, reject) => {
+        const failAbort = () => {
+          if (builtIn) builtInAborted = true;
+          else customAborted = true;
+          reject(new DOMException("Aborted", "AbortError"));
+        };
+        if (launch.signal.aborted) return failAbort();
+        launch.signal.addEventListener("abort", failAbort, { once: true });
+        if (builtIn) resolveBuiltIn = resolve;
+      });
+    });
+
+    const pendingCustom = runUsage(runtime);
+    const pendingBuiltIn = readBuiltInUsage(runtime);
+    await vi.waitFor(() => expect(customStarted).toBe(true));
+    await vi.waitFor(() => expect(builtInStarted).toBe(true));
+
+    await Effect.runPromise(runtime.reloadCustomAgents());
+
+    expect(customAborted).toBe(true);
+    expect(builtInAborted).toBe(false);
+    resolveBuiltIn({ quota: readyQuota(), text: null });
+
+    await expect(pendingCustom).resolves.toEqual([]);
+    await expect(pendingBuiltIn).resolves.not.toBeNull();
+    expect(readCopilotQuotaMock).toHaveBeenCalledTimes(2);
+  });
 });

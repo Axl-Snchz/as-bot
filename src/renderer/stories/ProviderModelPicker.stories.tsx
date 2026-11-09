@@ -265,6 +265,33 @@ const usageLimitArgs: Parameters<typeof ProviderModelPicker>[0] = {
   },
 };
 
+const copilotModelOptions = [
+  ...STORY_MODELS,
+  {
+    provider: "copilot" as const,
+    id: "copilot-ready/github-copilot/gpt-5",
+    name: "GitHub Copilot/GPT-5",
+    description: "Copilot model",
+    defaultReasoningEffort: "medium" as const,
+    supportedReasoningEfforts: ["medium" as const],
+  },
+];
+
+const statusWithCopilotAvailable: AgentStatus = {
+  ...STORY_AGENT_STATUS,
+  providers: [
+    ...(STORY_AGENT_STATUS.providers ?? []),
+    { id: "copilot", state: "available", version: "1.0.107", message: null },
+  ],
+};
+
+const statusWithCopilotSignedOut: AgentStatus = {
+  ...statusWithCopilotAvailable,
+  providers: (statusWithCopilotAvailable.providers ?? []).map((provider) =>
+    provider.id === "copilot" ? { ...provider, state: "sign-in-required" as const, version: null } : provider,
+  ),
+};
+
 /**
  * The Claude weekly window is spent: a chip beside the provider name gives the window and its reset.
  * The rows and the tab show no mark; their names tell a screen reader. Codex has quota left.
@@ -311,7 +338,64 @@ export const UsagePreviewCopilotCustomAgent: Story = {
         providerLogo: "copilot",
         quota: { state: "no-data" },
       },
+      {
+        id: "copilot-secondary",
+        name: "Copilot Secondary",
+        providerLogo: "copilot",
+        quota: { state: "ready", remainingPercent: 4, tone: "critical", resetAtMs: Date.now() + 3 * 86_400_000 },
+      },
     ],
+  },
+};
+
+export const UsagePreviewCopilotBuiltInPreferred: Story = {
+  args: {
+    ...UsagePreviewCopilotCustomAgent.args,
+    modelOptions: copilotModelOptions,
+    agentStatus: statusWithCopilotAvailable,
+    accountUsage: {
+      limits: [
+        {
+          id: "copilot",
+          primary: {
+            usedPercent: 41,
+            windowDurationMins: 43_200,
+            resetsAt: Math.floor(Date.now() / 1_000) + 16 * 86_400,
+          },
+          secondary: null,
+        },
+      ],
+    },
+  },
+};
+
+export const UsagePreviewCopilotFallbackSignedOut: Story = {
+  args: {
+    ...UsagePreviewCopilotCustomAgent.args,
+    modelOptions: copilotModelOptions,
+    agentStatus: statusWithCopilotSignedOut,
+    accountUsage: {
+      limits: [
+        {
+          id: "copilot",
+          primary: {
+            usedPercent: 41,
+            windowDurationMins: 43_200,
+            resetsAt: Math.floor(Date.now() / 1_000) + 16 * 86_400,
+          },
+          secondary: null,
+        },
+      ],
+    },
+  },
+};
+
+export const UsagePreviewCopilotNeutralNoData: Story = {
+  args: {
+    ...UsagePreviewCopilotCustomAgent.args,
+    modelOptions: copilotModelOptions,
+    agentStatus: statusWithCopilotAvailable,
+    accountUsage: { limits: [] },
   },
 };
 

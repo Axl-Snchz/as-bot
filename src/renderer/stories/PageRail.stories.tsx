@@ -45,6 +45,15 @@ const comparisonUsageRows = accountUsageProviderRows({
     },
   ],
 });
+const builtInCopilotUsageRows = accountUsageProviderRows({
+  limits: [
+    {
+      id: "copilot",
+      primary: { usedPercent: 37, windowDurationMins: 43_200, resetsAt: nowSeconds + 11 * 86_400 },
+      secondary: null,
+    },
+  ],
+});
 const comparisonCodexUsageRow = comparisonUsageRows.find((row) => row.provider === "codex");
 const comparisonClaudeUsageRow = comparisonUsageRows.find((row) => row.provider === "claude");
 if (!comparisonCodexUsageRow || !comparisonClaudeUsageRow)
@@ -146,6 +155,7 @@ function RailPreview(props: {
   customAgentUsage?: readonly CustomAgentUsageRailRow[];
   usageRows?: PageRailProps["usageRows"];
   reorderableOrder?: readonly string[];
+  preferBuiltInCopilotUsage?: boolean;
 }) {
   const { t } = useText();
   const [current, setCurrent] = createSignal<PageRailPage | null>("agents");
@@ -166,6 +176,7 @@ function RailPreview(props: {
           onReorderableOrderChange={(next) => setReorderableOrder(next)}
           usageRows={props.usageRows ?? usageRows}
           customAgentUsage={props.customAgentUsage}
+          preferBuiltInCopilotUsage={props.preferBuiltInCopilotUsage}
           onAgents={() => setCurrent("agents")}
           onRoutines={() => setCurrent("routines")}
           onSchedule={() => setCurrent("schedule")}
@@ -219,8 +230,33 @@ export const CustomAgentsMixedUsage: Story = {
 
 export const UsageComparisonBuiltInAndCopilot: Story = {
   args: {
-    usageRows: comparisonUsageRows,
+    usageRows: builtInCopilotUsageRows,
     customAgentUsage: customAgentsMixedUsage.filter((row) => row.id === "copilot-local"),
+    preferBuiltInCopilotUsage: true,
+  },
+};
+
+export const UsageFallbackToCustomCopilot: Story = {
+  args: {
+    usageRows: builtInCopilotUsageRows,
+    customAgentUsage: [
+      ...customAgentsMixedUsage.filter((row) => row.id === "copilot-local"),
+      {
+        id: "copilot-secondary",
+        name: "Copilot Secondary",
+        providerLogo: "copilot",
+        quota: { state: "ready", remainingPercent: 4, tone: "critical", resetAtMs: Date.now() + 12 * 86_400_000 },
+      },
+    ],
+    preferBuiltInCopilotUsage: false,
+  },
+};
+
+export const UsageNeutralBuiltInCopilotNoData: Story = {
+  args: {
+    usageRows: accountUsageProviderRows({ limits: [] }, [{ id: "copilot", state: "available" }]),
+    customAgentUsage: customAgentsMixedUsage.filter((row) => row.id === "copilot-local"),
+    preferBuiltInCopilotUsage: true,
   },
 };
 

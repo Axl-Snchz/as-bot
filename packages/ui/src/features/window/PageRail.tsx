@@ -20,6 +20,7 @@ import { type AccountUsageProviderRow, accountUsageRowKey } from "@openbot/ui/fe
 import { useText } from "@openbot/ui/text";
 import { Dynamic, type JSX } from "@solidjs/web";
 import { createMemo, createSignal, createUniqueId, For, Show } from "solid-js";
+import { dedupeCopilotCustomUsageRows, dedupeCopilotUsageRows } from "../account/copilot-usage-dedup";
 import { type CustomAgentUsageRow, customAgentCopilotUsageRow } from "../account/custom-agent-usage";
 import { AccountUsageRingIcon, accountUsageRingGroups, accountUsageRingTracks } from "../account/usage-rings";
 import { createRailReorder, type RailButtonNativeProps, type RailReorderEntry } from "./page-rail-reorder";
@@ -273,6 +274,8 @@ export interface PageRailProps {
   usageRows: readonly AccountUsageProviderRow[];
   /** The custom agents on this computer, with their last usage answer when one is available. Absent on the web. */
   customAgentUsage?: readonly CustomAgentUsageRailRow[] | undefined;
+  /** Prefer built-in Copilot usage over custom Copilot usage when built-in is available and on. */
+  preferBuiltInCopilotUsage?: boolean | undefined;
   /** The saved order of usage and custom-agent buttons in the lower rail group. */
   reorderableOrder?: readonly string[] | undefined;
   /** Saves the order of usage and custom-agent buttons in the lower rail group. */
@@ -432,7 +435,7 @@ export function PageRail(props: PageRailProps) {
    * such as Cursor on a merged Grok plan: that ring's card lists it instead.
    */
   const rings = createMemo(() => {
-    const rows = props.usageRows.filter((row) => row.reportsUsage && row.windows.length > 0);
+    const rows = dedupeCopilotUsageRows(props.usageRows, Boolean(props.preferBuiltInCopilotUsage));
     return accountUsageRingGroups(rows);
   });
   /** The pages that this server has, in rail order. */
@@ -481,7 +484,7 @@ export function PageRail(props: PageRailProps) {
       row: ring.row,
       shared: ring.shared,
     })),
-    ...(props.customAgentUsage ?? []).map((row) => ({
+    ...dedupeCopilotCustomUsageRows(props.customAgentUsage, Boolean(props.preferBuiltInCopilotUsage)).map((row) => ({
       id: `custom-agent:${row.id}`,
       kind: "custom-agent" as const,
       label: row.name,

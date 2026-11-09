@@ -73,6 +73,7 @@
     "./features/account/otp-input.css": "./src/features/account/otp-input.css",
     "./features/account/account-usage-rings.css": "./src/features/account/account-usage-rings.css",
     "./features/account/account-usage-view": "./src/features/account/account-usage-view.ts",
+    "./features/account/copilot-usage-dedup": "./src/features/account/copilot-usage-dedup.ts",
     "./features/agent-dock/AgentDock": "./src/features/agent-dock/AgentDock.tsx",
     "./features/agent-dock/AgentDockChat": "./src/features/agent-dock/AgentDockChat.tsx",
     "./features/agent-dock/agent-dock.css": "./src/features/agent-dock/agent-dock.css",
