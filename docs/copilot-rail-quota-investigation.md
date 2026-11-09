@@ -43,6 +43,134 @@ documentation. Current implementation now:
   rows/aria labels (for example `98% left` instead of `98.3% left`) while
   keeping counter math precision unchanged.
 
+## 2026-11-09 built-in rail/picker quota fix
+
+Base: `68bb0f067f77cb53e46a4242429a8a47f70ca0f3` (`origin/as-bot`).
+Previous fork: `52f6f4c765a80cd14da7b91b2bc7155a101949cb`.
+Branch: `fix/copilot-builtin-quota`.
+Worktree: `C:\AS_Repos\openbot-wt-copilot`.
+Scope: backend quota adapter, renderer/shared UI, tests, stories, and release note.
+The upstream provider descriptor and released IPC contracts stay unchanged.
+
+### Root cause in source
+
+1. `packages/contracts/src/agent-providers.ts:452` remains
+   `copilot.reportsUsage: false` (upstream default). UI keeps the override in
+   `packages/ui/src/features/account/account-usage-view.ts` so built-in Copilot
+   still maps monthly usage rows without changing the descriptor contract.
+2. Custom-agent Copilot quota rows stayed enabled, so behavior could show
+   custom Copilot quota instead of built-in quota (or duplicate both) unless
+   rail/picker selection rules are aligned.
+3. The built-in driver (`src/backend/provider-drivers.ts:1279-1340` on the
+   base commit) did not supply the ACP `readRateLimits` option. The ACP
+   `account/rateLimits/read` handler returns empty limits without that option
+   (`src/backend/acp-client.ts:1083-1102`). The provider-wide reader also
+   skips providers with `reportsUsage: false`.
+4. On the base commit, both `PageRail.tsx:435` and
+   `ProviderModelPicker.tsx:404-406` filter out rows with no reported usage
+   or no windows. This explains the built-in rail omission and missing
+   picker quota, but does not prove why a saved custom row was absent.
+
+### Historical comparison requested (`52f6f4c76..origin/as-bot`)
+
+- `src/renderer/src/features/window/WorkspacePageRail.tsx:75` at
+  `52f6f4c76` and `:76` at `68bb0f067` keep
+  `customAgentUsage={localAgentUsage()}`; only Library wiring changed.
+- `packages/ui/src/features/window/PageRail.tsx` keeps
+  `customAgentUsage` + reorder wiring in both ranges; only Library page support
+  changed in that diff.
+
+This confirms upstream merge did not remove custom usage wiring; built-in
+Copilot absence comes from usage-reporting + presentation path, not from removed
+rail plumbing.
+
+### Implemented dedup and fallback contract
+
+- Built-in Copilot quota is preferred when provider status is
+  `state === "available"` and `off !== true`.
+- When built-in is preferred, rail and picker keep the built-in Copilot row
+  visible even with no windows (`no-data`/error), as neutral icon state with no
+  success arc; custom Copilot quota presentation is hidden.
+- When built-in Copilot is signed out, unavailable, or turned off, built-in
+  Copilot usage rows are hidden (including stale limits), and one deterministic
+  custom Copilot fallback quota row is shown: the first ready Copilot in saved
+  order, or the first saved Copilot if none is ready. Other saved agents and
+  their model choices stay intact.
+- Custom and built-in invalidation paths remain separate; backend batch refresh
+  behavior is tracked separately from this UI selection logic.
+
+### Profile-state caveat
+
+Installed profile state (saved agents, credentials, local cache) is unknown in
+this repository review. No claim is made here about installed-profile migration
+or corruption.
+
+### Built-in adapter and safety
+
+`ProviderRuntime.usage` reads Copilot before the generic descriptor gate.
+It uses the built-in provider's resolved executable, launch path, shared
+`COPILOT_ARGV`/`COPILOT_ENV`, and configured agent environment. It does not
+fall back to a custom command or copy a custom agent's account credentials.
+The CLI resolves its own authentication; this code does not read tokens.
+An enterprise custom wrapper can therefore use a different account from the
+built-in CLI. A signed-in built-in provider still wins the presentation rule.
+
+The quota-only subprocess uses `builtin-copilot-quota` as its isolated folder.
+Session confinement and session server-marker variables are not needed for
+this no-session read; authentication environment precedence matches the
+built-in launch path. The existing reader sanitizes arguments, disables MCP,
+logging, updates, and history sync, and calls only `ping` and `account.getQuota`.
+It never opens a model session or sends a prompt.
+
+Reads are serialized and cached for five minutes per launch identity. Existing
+visible-window polling requests them. Copilot sign-out, turn-off, CLI reload,
+and shared environment changes invalidate the built-in cache. Custom-agent
+reload clears only the custom cache. Abort and shutdown stop and await only the
+quota reader's own Copilot process trees. No Bun or Node process is stopped.
+No-data or error clears the success reading and gives a neutral icon.
+
+The adapter maps monthly counter-derived remaining percentage to the existing
+`AccountUsageWindow.usedPercent` complement. A 43,200-minute duration selects
+the shared monthly label; it is not a claim that all calendar months have
+30 days. A future CLI reset stays authoritative. A missing or past reset uses
+the next month's first day at 00:00 UTC. UI labels show whole percent remaining,
+not credits or USD.
+
+### Verification and handoff
+
+Integrated targeted command:
+
+```text
+bun run test:desktop -- src/backend/copilot-quota.test.ts src/backend/agent/provider-runtime.test.ts src/renderer/src/features/account/account-usage-view.test.ts src/renderer/src/features/window/PageRail.custom-agent-usage.test.tsx src/renderer/src/features/conversation/ProviderModelPickerUsagePreview.test.tsx src/renderer/src/features/custom-agents/custom-agent-copilot-detection.test.ts --maxWorkers=1
+```
+
+- Exit 0: 67 tests passed in six files.
+- `bun run typecheck`: exit 0, all 15 projects passed.
+- Touched-file Biome: exit 0, four module-mocking warnings in runtime tests.
+- `bun run i18n:check`: exit 1 on both this fix and an archived base
+  `68bb0f067`. The same four Hebrew gaps and stale
+  `packages/i18n/untranslated.json` occur on both. No catalog was changed.
+- Known Windows baseline files: 96 tests passed, six failed. Four are path
+  separators in `scripts/ui-foundation-check.test.ts:30,125,138,156`;
+  one is permission mode in `src/backend/openbot-database.test.ts:131`
+  (cleanup also reports `EBUSY`); one is separators in
+  `src/main/provider-runtime-failure-log.test.ts:51`. These files are unchanged.
+  No full suite was run, so this is not a claim that no other failures exist.
+- Architect's integrated re-review: Approved.
+- Browser verification is blocked: the Windows Storybook supervisor shutdown
+  uses process termination, which conflicts with the task's no-Bun/Node-kill
+  rule. No server was started and no screenshot was taken. Render tests do
+  not replace visual verification.
+- Follow-up outside this desktop fix: the web `PageRail` consumer does not
+  yet pass the built-in Copilot preference. Its picker can show the quota;
+  its rail needs that small hook before claiming web parity.
+
+Design checklist section 12: existing tokens, controls, and states are reused;
+no new decorative effects or animation were added. The Copilot logo identifies
+the provider, the ring arc reports quota state, and its neutral track preserves
+orientation when quota is unavailable. Theme contrast was not checked in a
+browser in this task.
+
 ## Original Phase 1 investigation notes (preserved)
 
 ## Local checks and actual output

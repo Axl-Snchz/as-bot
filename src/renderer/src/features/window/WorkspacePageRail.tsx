@@ -1,11 +1,13 @@
 import { isUpdateActivePhase } from "@openbot/contracts/ipc";
 import { AGENT_TASKS_CAPABILITY } from "@openbot/contracts/team-protocol/agent-tasks-v1";
+import { isBuiltInCopilotUsagePreferred } from "@openbot/ui/features/account/copilot-usage-dedup";
 import type { SidebarView } from "@openbot/ui/features/sidebar/sidebar-types";
 import { PageRail, type PageRailPage } from "@openbot/ui/features/window/PageRail";
 import { useText } from "@openbot/ui/text";
 import { appPort } from "../../app-port";
 import { useLayout } from "../../layout";
 import { usePlatform } from "../../platform";
+import { useAgents } from "../agents/agents-context";
 import { useChannels } from "../channels/channels-context";
 import { useCustomAgents } from "../custom-agents/custom-agents-context";
 import { serverHasStorage } from "../files/storage-usage";
@@ -45,9 +47,11 @@ export function WorkspacePageRail(props: { hidden: boolean }) {
     layout.setSidebarView(view);
   }
   const usageRows = usePlanLimitRows();
+  const { agentStatus } = useAgents();
   const { customAgentUsage } = useCustomAgents();
   /** The custom agents run on this computer, so a joined server does not show their usage. */
   const localAgentUsage = () => (activeServer()?.kind === "local" ? customAgentUsage() : []);
+  const preferBuiltInCopilotUsage = () => isBuiltInCopilotUsagePreferred(agentStatus().providers);
   /** The compact sidebar has no footer, so the update island does not show. The Settings button then marks the update. */
   const updateNotice = () => {
     const phase = updates.status().phase;
@@ -74,6 +78,7 @@ export function WorkspacePageRail(props: { hidden: boolean }) {
       onReorderableOrderChange={layout.setRailReorder}
       usageRows={usageRows()}
       customAgentUsage={localAgentUsage()}
+      preferBuiltInCopilotUsage={preferBuiltInCopilotUsage()}
       onAgents={() => showSidebarView("agents")}
       onRoutines={() => showSidebarView("routines")}
       // A joined server without workflows shows its notice on the page.

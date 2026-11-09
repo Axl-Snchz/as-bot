@@ -62,6 +62,11 @@ import {
   usageWindowLabel,
 } from "../features/account/account-usage-view";
 import {
+  dedupeCopilotCustomUsageRows,
+  dedupeCopilotUsageRows,
+  isBuiltInCopilotUsagePreferred,
+} from "../features/account/copilot-usage-dedup";
+import {
   type CustomAgentUsageQuota,
   type CustomAgentUsageRow,
   customAgentCopilotUsageRow,
@@ -402,13 +407,17 @@ export function ProviderModelPicker(props: ProviderModelPickerProps) {
    */
   const [now, setNow] = createSignal(Date.now());
   const usageRows = createMemo(() =>
-    accountUsageProviderRows(props.accountUsage ?? null, props.agentStatus.providers, text).filter(
-      (row) => row.reportsUsage && row.windows.length > 0,
+    dedupeCopilotUsageRows(
+      accountUsageProviderRows(props.accountUsage ?? null, props.agentStatus.providers, text),
+      isBuiltInCopilotUsagePreferred(props.agentStatus.providers),
     ),
   );
   const usageGroups = createMemo(() => accountUsageRingGroups(usageRows()));
+  const customUsageRows = createMemo(() =>
+    dedupeCopilotCustomUsageRows(props.customAgentUsage, isBuiltInCopilotUsagePreferred(props.agentStatus.providers)),
+  );
   const copilotUsageRows = createMemo(() =>
-    (props.customAgentUsage ?? []).flatMap((row) => {
+    customUsageRows().flatMap((row) => {
       const usage = customAgentCopilotUsageRow(row, text);
       return usage ? [usage] : [];
     }),

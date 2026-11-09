@@ -54,6 +54,7 @@ import {
 import {
   COPILOT_QUOTA_CACHE_MS,
   copilotUsageSettingsFingerprint,
+  copilotUsageWindowFromReady,
   isCopilotCommand,
   quotaIdentity,
   readCopilotQuota,
@@ -83,6 +84,8 @@ import { ProviderSignInError } from "../provider-client-effects";
 import {
   antigravityTemp,
   BUILT_IN_PROVIDER_DRIVERS,
+  COPILOT_ARGV,
+  COPILOT_ENV,
   customAgentDiscoveryFolder,
   type ProviderClientContext,
   requireProviderDriver,
@@ -503,8 +506,17 @@ export class ProviderRuntime implements ProviderPort {
         readAt: number;
       }
   >();
-  readonly #copilotQuotaReads = new Set<{ abort: () => void; done: Promise<void> }>();
-  #copilotUsageCacheVersion = 0;
+  readonly #customCopilotQuotaReads = new Set<{ abort: () => void; done: Promise<void> }>();
+  readonly #builtInCopilotQuotaReads = new Set<{ abort: () => void; done: Promise<void> }>();
+  #copilotOwnUsage: {
+    identity: string;
+    cacheVersion: number;
+    usage: AccountUsage["limits"][number] | null;
+    readAt: number;
+  } | null = null;
+  readonly #copilotOwnUsageLock = Semaphore.makeUnsafe(1);
+  #customCopilotUsageCacheVersion = 0;
+  #builtInCopilotUsageCacheVersion = 0;
   /** One usage read at a time, so that a second request does not send the prompts again. */
   readonly #customAgentUsageLock = Semaphore.makeUnsafe(1);
   #idleCheck: NodeJS.Timeout | null = null;
@@ -1076,6 +1088,17 @@ export class ProviderRuntime implements ProviderPort {
             usage = normalizeAccountUsage(
               yield* readKimiUsage(isPythonKimiCli(cli), env).pipe(toProviderOperationFailed, deadline),
             );
+          } else if (provider === "copilot") {
+            const limit = yield* this.#readBuiltInCopilotUsage();
+            if (!limit) {
+              this.#usageUnreported.add(provider);
+              this.#lastUsage.delete(provider);
+              return null;
+            }
+            this.#lastUsage.set(provider, limit);
+            this.#usageUnreported.delete(provider);
+            this.#usageGate(provider).succeeded();
+            return { ...limit };
           } else {
             // Starting a provider that has no usage reading only to get nothing back cost a cold
             // start on every dock poll.
@@ -1288,7 +1311,7 @@ export class ProviderRuntime implements ProviderPort {
     this: ProviderRuntime,
   ): Effect.fn.Return<CustomAgentUsage[]> {
     const disposals = this.#disposals;
-    const cacheVersion = this.#copilotUsageCacheVersion;
+    const cacheVersion = this.#customCopilotUsageCacheVersion;
     const stopped = () => this.#hooks.isStopping() || disposals !== this.#disposals;
     if (stopped()) return [];
     type UsageReadCandidate = {
@@ -1359,7 +1382,7 @@ export class ProviderRuntime implements ProviderPort {
         );
       }),
     ).pipe(Effect.map((items) => items.flat()));
-    if (stopped() || cacheVersion !== this.#copilotUsageCacheVersion) return [];
+    if (stopped() || cacheVersion !== this.#customCopilotUsageCacheVersion) return [];
     const agents: UsageRead[] = resolved;
     if (agents.length === 0) return [];
     const kept = (): CustomAgentUsage[] =>
@@ -1388,7 +1411,7 @@ export class ProviderRuntime implements ProviderPort {
           entry !== undefined &&
           entry.kind === "copilot" &&
           entry.settingsFingerprint === agent.settingsFingerprint &&
-          entry.cacheVersion === this.#copilotUsageCacheVersion &&
+          entry.cacheVersion === this.#customCopilotUsageCacheVersion &&
           Date.now() - entry.readAt < COPILOT_USAGE_CACHE_MS
         );
       });
@@ -1396,7 +1419,7 @@ export class ProviderRuntime implements ProviderPort {
     if (this.#released.has("acp") && promptReadWithin(CUSTOM_AGENT_USAGE_WAKE_MS) && copilotReadWithin()) return kept();
     const launchPath = yield* agentLaunchPath().pipe(Effect.catch(() => Effect.succeed(null)));
     const readCopilotInFlight = new Map<string, Promise<{ quota: CustomAgentQuota; text: string | null }>>();
-    if (stopped() || cacheVersion !== this.#copilotUsageCacheVersion) return [];
+    if (stopped() || cacheVersion !== this.#customCopilotUsageCacheVersion) return [];
     if (agents.some((agent) => agent.kind === "prompt") && !this.#clients.has("acp"))
       yield* this.ensureProvider("acp").pipe(this.#logUsageFailure("acp"));
     const client = this.#clients.get("acp");
@@ -1459,7 +1482,7 @@ export class ProviderRuntime implements ProviderPort {
                 const executable = await Effect.runPromise(
                   resolveAgentCommand(agent.command).pipe(Effect.catch(() => Effect.succeed(null))),
                 );
-                if (signal.aborted || stopped() || cacheVersion !== this.#copilotUsageCacheVersion) return;
+                if (signal.aborted || stopped() || cacheVersion !== this.#customCopilotUsageCacheVersion) return;
                 if (!executable) {
                   this.#customAgentUsage.set(agent.id, {
                     kind: "copilot",
@@ -1491,7 +1514,7 @@ export class ProviderRuntime implements ProviderPort {
                   cached.kind === "copilot" &&
                   cached.identity === identity &&
                   cached.settingsFingerprint === agent.settingsFingerprint &&
-                  cached.cacheVersion === this.#copilotUsageCacheVersion &&
+                  cached.cacheVersion === this.#customCopilotUsageCacheVersion &&
                   Date.now() - cached.readAt < COPILOT_USAGE_CACHE_MS
                 )
                   return;
@@ -1510,7 +1533,7 @@ export class ProviderRuntime implements ProviderPort {
                     tracker.abort();
                     return;
                   }
-                  this.#copilotQuotaReads.add(tracker);
+                  this.#customCopilotQuotaReads.add(tracker);
                   pending = readCopilotQuota({
                     executable,
                     args: agent.args,
@@ -1523,19 +1546,19 @@ export class ProviderRuntime implements ProviderPort {
                   tracker.done = pending.then(
                     () => {
                       signal.removeEventListener("abort", onAbort);
-                      this.#copilotQuotaReads.delete(tracker);
+                      this.#customCopilotQuotaReads.delete(tracker);
                       return;
                     },
                     () => {
                       signal.removeEventListener("abort", onAbort);
-                      this.#copilotQuotaReads.delete(tracker);
+                      this.#customCopilotQuotaReads.delete(tracker);
                       return;
                     },
                   );
                   readCopilotInFlight.set(identity, pending);
                 }
                 const read = await pending;
-                if (signal.aborted || stopped() || cacheVersion !== this.#copilotUsageCacheVersion) return;
+                if (signal.aborted || stopped() || cacheVersion !== this.#customCopilotUsageCacheVersion) return;
                 if (read.quota.state === "error") logger.warn("Could not read Copilot quota.");
                 const text = read.text ?? "";
                 this.#customAgentUsage.set(agent.id, {
@@ -1552,6 +1575,93 @@ export class ProviderRuntime implements ProviderPort {
       { concurrency: "unbounded", discard: true },
     );
     return kept();
+  });
+
+  readonly #readBuiltInCopilotUsage = Effect.fn("ProviderRuntime.readBuiltInCopilotUsage")(function* (
+    this: ProviderRuntime,
+  ): Effect.fn.Return<AccountUsage["limits"][number] | null> {
+    return yield* this.#copilotOwnUsageLock.withPermit(this.#readBuiltInCopilotUsageUnlocked());
+  });
+
+  readonly #readBuiltInCopilotUsageUnlocked = Effect.fn("ProviderRuntime.readBuiltInCopilotUsageUnlocked")(function* (
+    this: ProviderRuntime,
+  ): Effect.fn.Return<AccountUsage["limits"][number] | null> {
+    const cacheVersion = this.#builtInCopilotUsageCacheVersion;
+    const cli = this.#cli.get("copilot");
+    if (!cli) return null;
+    const launchPath = cli.launchPath ?? null;
+    const inherited = { ...process.env, ...cliPathEnvironment(cli), ...COPILOT_ENV };
+    const env = { ...COPILOT_ENV, ...(this.#credentials.agentEnvironment?.(inherited) ?? {}) };
+    const identity = quotaIdentity({
+      command: cli.executable,
+      executable: cli.executable,
+      args: COPILOT_ARGV,
+      env,
+      launchPath,
+    });
+    const cached = this.#copilotOwnUsage;
+    if (
+      cached &&
+      cached.identity === identity &&
+      cached.cacheVersion === cacheVersion &&
+      Date.now() - cached.readAt < COPILOT_QUOTA_CACHE_MS
+    )
+      return cached.usage ? structuredClone(cached.usage) : null;
+    const result = yield* Effect.tryPromise({
+      try: async (signal) => {
+        if (signal.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
+        const controller = new AbortController();
+        const onAbort = () => controller.abort(signal.reason);
+        signal.addEventListener("abort", onAbort, { once: true });
+        const tracker: { abort: () => void; done: Promise<void> } = {
+          abort: () => controller.abort(new DOMException("Aborted", "AbortError")),
+          done: Promise.resolve(),
+        };
+        this.#builtInCopilotQuotaReads.add(tracker);
+        const pending = readCopilotQuota({
+          executable: cli.executable,
+          args: COPILOT_ARGV,
+          env,
+          launchPath,
+          cwd: customAgentDiscoveryFolder("builtin-copilot-quota"),
+          timeoutMs: ACCOUNT_USAGE_READ_TIMEOUT_MS,
+          signal: controller.signal,
+        });
+        tracker.done = pending.then(
+          () => {
+            signal.removeEventListener("abort", onAbort);
+            this.#builtInCopilotQuotaReads.delete(tracker);
+            return;
+          },
+          () => {
+            signal.removeEventListener("abort", onAbort);
+            this.#builtInCopilotQuotaReads.delete(tracker);
+            return;
+          },
+        );
+        return pending;
+      },
+      catch: (cause) => new ProviderOperationFailed({ cause }),
+    }).pipe(
+      Effect.catch(() =>
+        Effect.succeed({
+          quota: { state: "error", messageKey: "account.usage.value.unavailable" } as const,
+          text: null,
+        }),
+      ),
+    );
+    if (cacheVersion !== this.#builtInCopilotUsageCacheVersion) return null;
+    if (result.quota.state !== "ready") {
+      this.#copilotOwnUsage = { identity, cacheVersion, usage: null, readAt: Date.now() };
+      return null;
+    }
+    const usage: AccountUsage["limits"][number] = {
+      id: "copilot",
+      primary: copilotUsageWindowFromReady(result.quota),
+      secondary: null,
+    };
+    this.#copilotOwnUsage = { identity, cacheVersion, usage, readAt: Date.now() };
+    return structuredClone(usage);
   });
 
   /**
@@ -1573,11 +1683,25 @@ export class ProviderRuntime implements ProviderPort {
     this.#usageGate(provider).reset();
     this.#lastUsage.delete(provider);
     this.#ownResetCredits.delete(provider);
-    if (provider === "acp") this.#invalidateCopilotUsageCache();
+    if (provider === "acp") this.#invalidateCustomCopilotUsageCache();
+    if (provider === "copilot") {
+      this.#invalidateBuiltInCopilotUsageCache();
+      this.#invalidateCustomCopilotUsageCache();
+    }
   }
 
-  #invalidateCopilotUsageCache(): void {
-    this.#copilotUsageCacheVersion += 1;
+  #invalidateCustomCopilotUsageCache(): void {
+    this.#customCopilotUsageCacheVersion += 1;
+    for (const read of this.#customCopilotQuotaReads) read.abort();
+  }
+
+  #invalidateBuiltInCopilotUsageCache(): void {
+    this.#builtInCopilotUsageCacheVersion += 1;
+    this.#copilotOwnUsage = null;
+    this.#usageGate("copilot").reset();
+    this.#lastUsage.delete("copilot");
+    this.#usageUnreported.add("copilot");
+    for (const read of this.#builtInCopilotQuotaReads) read.abort();
   }
 
   #usageGate(provider: AgentProvider): UsageReadGate {
@@ -2286,7 +2410,11 @@ export class ProviderRuntime implements ProviderPort {
     this: ProviderRuntime,
     provider: AgentProvider,
   ) {
-    if (provider === "acp") this.#invalidateCopilotUsageCache();
+    if (provider === "acp") this.#invalidateCustomCopilotUsageCache();
+    if (provider === "copilot") {
+      this.#invalidateBuiltInCopilotUsageCache();
+      this.#invalidateCustomCopilotUsageCache();
+    }
     if (this.#off.has(provider)) return;
     this.#environmentReloadPending.delete(provider);
     if (!this.#clients.has(provider)) return;
@@ -2308,7 +2436,7 @@ export class ProviderRuntime implements ProviderPort {
    */
 
   readonly reloadCustomAgents = Effect.fn("ProviderRuntime.reloadCustomAgents")(function* (this: ProviderRuntime) {
-    this.#invalidateCopilotUsageCache();
+    this.#invalidateCustomCopilotUsageCache();
     this.#customAgentsReloadPending = false;
     const result = yield* this.#reloadCustomAgents();
     if (result === "skipped-busy") this.#customAgentsReloadPending = true;
@@ -3005,9 +3133,9 @@ export class ProviderRuntime implements ProviderPort {
    */
   readonly dispose = Effect.fn("ProviderRuntime.dispose")(function* (this: ProviderRuntime) {
     this.#disposals += 1;
-    this.#invalidateCopilotUsageCache();
-    const copilotReads = [...this.#copilotQuotaReads];
-    for (const read of copilotReads) read.abort();
+    this.#invalidateBuiltInCopilotUsageCache();
+    this.#invalidateCustomCopilotUsageCache();
+    const copilotReads = [...this.#builtInCopilotQuotaReads, ...this.#customCopilotQuotaReads];
     if (copilotReads.length > 0)
       yield* Effect.tryPromise({
         try: () => Promise.allSettled(copilotReads.map((read) => read.done)).then(() => undefined),

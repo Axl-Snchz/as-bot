@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { homedir } from "node:os";
+import type { AccountUsageWindow } from "@openbot/contracts/ipc";
 import {
   type CustomAgentQuota,
   type CustomAgentQuotaReady,
@@ -29,6 +30,7 @@ const MAX_STDERR_BYTES = 32 * 1024;
 
 export const COPILOT_CREDIT_USD = 0.01;
 export const COPILOT_QUOTA_CACHE_MS = 5 * 60_000;
+export const COPILOT_MONTHLY_WINDOW_MINS = 43_200;
 const QUOTA_IDENTITY_SALT = randomBytes(32);
 const QUOTA_DECIMAL_SCALE = 1_000_000;
 
@@ -182,6 +184,29 @@ export function formatCopilotQuotaReady(snapshot: CopilotQuotaSnapshot): {
       creditUsd: COPILOT_CREDIT_USD,
     },
     text: "",
+  };
+}
+
+function fallbackCopilotResetAt(nowMs: number): number {
+  const now = new Date(nowMs);
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth();
+  return Math.floor(Date.UTC(year, month + 1, 1, 0, 0, 0, 0) / 1_000);
+}
+
+export function copilotUsedPercentFromRemaining(remainingPercentage: number): number {
+  const used = 100 - remainingPercentage;
+  return Math.max(0, Math.min(100, Math.round(used)));
+}
+
+export function copilotUsageWindowFromReady(ready: CustomAgentQuotaReady, nowMs = Date.now()): AccountUsageWindow {
+  const resetMs = ready.resetDate ? Date.parse(ready.resetDate) : Number.NaN;
+  const resetsAt =
+    Number.isFinite(resetMs) && resetMs > nowMs ? Math.floor(resetMs / 1_000) : fallbackCopilotResetAt(nowMs);
+  return {
+    usedPercent: copilotUsedPercentFromRemaining(ready.remainingPercentage),
+    windowDurationMins: COPILOT_MONTHLY_WINDOW_MINS,
+    resetsAt,
   };
 }
 

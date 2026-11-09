@@ -179,7 +179,7 @@ function usageRow(
     tone: usageTone(remainingPercent),
     windows,
     ringWindows,
-    reportsUsage: agentProviderDescriptor(provider).reportsUsage,
+    reportsUsage: provider === "copilot" ? true : agentProviderDescriptor(provider).reportsUsage,
     sharedQuotaWith: limit?.sharedQuotaWith ?? null,
   };
 }

@@ -4,7 +4,10 @@ import { Effect } from "effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   COPILOT_CREDIT_USD,
+  COPILOT_MONTHLY_WINDOW_MINS,
   copilotCommandBasename,
+  copilotUsageWindowFromReady,
+  copilotUsedPercentFromRemaining,
   formatCopilotQuotaReady,
   invokeCopilotQuotaRpc,
   isCopilotCommand,
@@ -261,6 +264,45 @@ describe("copilot quota", () => {
     expect(ready.quota.overageCredits).toBe(0.5);
     expect(ready.quota.remainingCredits).toBe(0);
     expect(ready.quota.remainingPercentage).toBe(0);
+  });
+
+  it("maps remaining percentage to used percentage with clamp and rounding", () => {
+    expect(copilotUsedPercentFromRemaining(98.3)).toBe(2);
+    expect(copilotUsedPercentFromRemaining(98.6)).toBe(1);
+    expect(copilotUsedPercentFromRemaining(0)).toBe(100);
+    expect(copilotUsedPercentFromRemaining(100)).toBe(0);
+    expect(copilotUsedPercentFromRemaining(-10)).toBe(100);
+    expect(copilotUsedPercentFromRemaining(120)).toBe(0);
+  });
+
+  it("uses future reset as authoritative and falls back to next month UTC start", () => {
+    const now = Date.UTC(2026, 10, 9, 7, 33, 33, 0);
+    const nextMonth = Math.floor(Date.UTC(2026, 11, 1, 0, 0, 0, 0) / 1_000);
+    const ready = {
+      state: "ready",
+      entitlementCredits: 100,
+      usedCredits: 2,
+      overageCredits: 0,
+      remainingCredits: 98,
+      remainingPercentage: 98.3,
+      resetDate: "2026-11-20T00:00:00.000Z",
+      creditUsd: 0.01,
+    } as const;
+    expect(copilotUsageWindowFromReady(ready, now)).toEqual({
+      usedPercent: 2,
+      windowDurationMins: COPILOT_MONTHLY_WINDOW_MINS,
+      resetsAt: Math.floor(Date.parse("2026-11-20T00:00:00.000Z") / 1_000),
+    });
+    expect(copilotUsageWindowFromReady({ ...ready, resetDate: null }, now)).toEqual({
+      usedPercent: 2,
+      windowDurationMins: COPILOT_MONTHLY_WINDOW_MINS,
+      resetsAt: nextMonth,
+    });
+    expect(copilotUsageWindowFromReady({ ...ready, resetDate: "2026-11-01T00:00:00.000Z" }, now)).toEqual({
+      usedPercent: 2,
+      windowDurationMins: COPILOT_MONTHLY_WINDOW_MINS,
+      resetsAt: nextMonth,
+    });
   });
 
   it("hashes quota identity with a process-local digest", () => {

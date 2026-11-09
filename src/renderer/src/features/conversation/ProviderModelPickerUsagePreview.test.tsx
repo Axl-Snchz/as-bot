@@ -39,6 +39,17 @@ const BASE_MODELS: ClientAgentModelOption[] = [
     supportedReasoningEfforts: ["medium"],
   },
 ];
+const COPILOT_MODEL_OPTIONS: ClientAgentModelOption[] = [
+  ...BASE_MODELS,
+  {
+    provider: "copilot",
+    id: "copilot-ready/github-copilot/gpt-5",
+    name: "GitHub Copilot/GPT-5",
+    description: "Copilot model",
+    defaultReasoningEffort: "medium",
+    supportedReasoningEfforts: ["medium"],
+  },
+];
 
 function baseStatus(): AgentStatus {
   return {
@@ -100,7 +111,9 @@ function renderPicker(props?: {
   accountChoice?: boolean;
   providerAccountId?: string | null;
   customAgentUsage?: readonly ProviderModelPickerCustomAgentUsageRow[];
+  onChange?: (model: string, provider: string, accountId?: string | null, reasoningEffort?: string) => void;
 }) {
+  const onChange = props?.onChange ?? vi.fn();
   return render(() => (
     <ProviderModelPicker
       provider="codex"
@@ -111,7 +124,7 @@ function renderPicker(props?: {
       accountChoice={props?.accountChoice}
       providerAccountId={props?.providerAccountId}
       customAgentUsage={props?.customAgentUsage}
-      onChange={vi.fn()}
+      onChange={onChange}
     />
   ));
 }
@@ -120,7 +133,7 @@ describe("ProviderModelPicker usage integration", () => {
   it("shows provider rings + compact bars, then switches account-specific rows", async () => {
     const status = baseStatus();
     status.providers = status.providers?.map((provider) =>
-      provider.id === "codex"
+      provider.id === "cursor"
         ? {
             ...provider,
             accounts: [
@@ -148,12 +161,12 @@ describe("ProviderModelPicker usage integration", () => {
       accountUsage: {
         limits: [
           {
-            id: "codex",
+            id: "cursor",
             primary: null,
             secondary: { usedPercent: 30, windowDurationMins: 10_080, resetsAt: NOW_SECONDS + 86_400 },
           },
           {
-            id: "codex",
+            id: "cursor",
             accountId: SECOND_CODEX_ACCOUNT_ID,
             primary: null,
             secondary: { usedPercent: 80, windowDurationMins: 10_080, resetsAt: NOW_SECONDS + 86_400 },
@@ -163,13 +176,14 @@ describe("ProviderModelPicker usage integration", () => {
     });
     await openPicker();
 
-    const defaultCodexTab = tabByLabel(/Codex(?! · Work)/u);
-    expect(defaultCodexTab.className).toContain("provider-model-rail-button-usage");
-    expect(arcDasharray(defaultCodexTab)).toMatch(/^70(?:\.0+)? 100$/u);
-    expect(defaultCodexTab.className).toContain("provider-model-rail-button-selected");
-    expect(defaultCodexTab.getAttribute("aria-selected")).toBe("true");
+    const defaultCursorTab = tabByLabel(/Cursor(?! · Work)/u);
+    expect(defaultCursorTab.className).toContain("provider-model-rail-button-usage");
+    expect(arcDasharray(defaultCursorTab)).toMatch(/^70(?:\.0+)? 100$/u);
+    fireEvent.click(defaultCursorTab);
+    await waitFor(() => expect(defaultCursorTab.className).toContain("provider-model-rail-button-selected"));
+    expect(defaultCursorTab.getAttribute("aria-selected")).toBe("true");
 
-    const defaultPanel = panelForTab(defaultCodexTab);
+    const defaultPanel = panelForTab(defaultCursorTab);
     const defaultPreview = defaultPanel.querySelector<HTMLElement>(".provider-model-usage-preview");
     if (!defaultPreview) throw new Error("Default preview missing");
     expect(defaultPreview).toBeVisible();
@@ -184,14 +198,14 @@ describe("ProviderModelPicker usage integration", () => {
 
     const namedAccountTab = screen.getAllByRole("tab").find((element) => {
       const label = element.getAttribute("aria-label") ?? "";
-      return label.startsWith("ChatGPT") && !label.includes("owner@example.com");
+      return label.startsWith("Cursor") && !label.includes("owner@example.com");
     });
-    if (!namedAccountTab) throw new Error("Named ChatGPT account tab not found");
+    if (!namedAccountTab) throw new Error("Named Cursor account tab not found");
     fireEvent.click(namedAccountTab);
     await waitFor(() => expect(namedAccountTab.className).toContain("provider-model-rail-button-selected"));
     expect(namedAccountTab.getAttribute("aria-selected")).toBe("true");
-    expect(defaultCodexTab.className).not.toContain("provider-model-rail-button-selected");
-    expect(defaultCodexTab.getAttribute("aria-selected")).toBe("false");
+    expect(defaultCursorTab.className).not.toContain("provider-model-rail-button-selected");
+    expect(defaultCursorTab.getAttribute("aria-selected")).toBe("false");
     expect(arcDasharray(namedAccountTab)).toMatch(/^20(?:\.0+)? 100$/u);
 
     const namedPanel = panelForTab(namedAccountTab);
@@ -215,7 +229,7 @@ describe("ProviderModelPicker usage integration", () => {
     expect(previewRegion()).toBeNull();
   });
 
-  it("maps custom-agent quota states and keeps only ready Copilot rows in Custom usage", async () => {
+  it("keeps one deterministic custom Copilot quota row in Custom usage", async () => {
     renderPicker({
       customAgentUsage: [
         {
@@ -245,23 +259,23 @@ describe("ProviderModelPicker usage integration", () => {
     const customTab = tabByLabel(/Custom/u);
     expect(customTab.className).toContain("provider-model-rail-button-usage");
     const customArc = customTab.querySelector<SVGCircleElement>(".account-usage-ring-arc");
-    expect(customArc?.getAttribute("stroke-dasharray")).toMatch(/^3(?:\.0+)? 100$/u);
-    expect(customArc?.getAttribute("data-usage-tone")).toBe("critical");
+    expect(customArc?.getAttribute("stroke-dasharray")).toMatch(/^21(?:\.0+)? 100$/u);
+    expect(customArc?.getAttribute("data-usage-tone")).toBe("warning");
 
     fireEvent.click(customTab);
     await waitFor(() => expect(previewRegion()).not.toBeNull());
 
     const preview = previewRegion();
     if (!preview) throw new Error("Custom preview missing");
-    expect(within(preview).getByText("Copilot Critical")).toBeInTheDocument();
-    expect(within(preview).getByText("Copilot Warning")).toBeInTheDocument();
+    expect(within(preview).getByText("21% left")).toBeInTheDocument();
+    expect(within(preview).queryByText("Copilot Critical")).toBeNull();
     expect(within(preview).queryByText("Copilot No Data")).toBeNull();
     expect(within(preview).queryByText("Copilot Error")).toBeNull();
     expect(within(preview).queryByText("Generic ACP Agent")).toBeNull();
     const fills = [...preview.querySelectorAll<HTMLElement>(".account-usage-window-fill")].map(
       (node) => node.style.inlineSize,
     );
-    expect(fills).toEqual(expect.arrayContaining(["3%", "21%"]));
+    expect(fills).toEqual(["21%"]);
   });
 
   it("keeps Custom ring and preview bars hidden when Copilot rows are no-data or error", async () => {
@@ -286,6 +300,155 @@ describe("ProviderModelPicker usage integration", () => {
     await waitFor(() => expect(customTab.className).toContain("provider-model-rail-button-selected"));
     const customPanel = panelForTab(customTab);
     expect(within(customPanel).queryByText(/% left/u)).toBeNull();
+  });
+
+  it("deduplicates custom Copilot usage when built-in Copilot is available", async () => {
+    const status = baseStatus();
+    status.providers = [...(status.providers ?? []), statusRow("copilot")];
+    renderPicker({
+      status,
+      accountUsage: {
+        limits: [
+          {
+            id: "copilot",
+            primary: { usedPercent: 41, windowDurationMins: 43_200, resetsAt: NOW_SECONDS + 15 * 86_400 },
+            secondary: null,
+          },
+        ],
+      },
+      customAgentUsage: [
+        {
+          id: "copilot-custom",
+          name: "Copilot Custom",
+          providerLogo: "copilot",
+          quota: { state: "ready", remainingPercent: 21, tone: "warning", resetAtMs: Date.now() + 86_400_000 },
+        },
+      ],
+    });
+    await openPicker();
+
+    const copilotTab = tabByLabelStart("GitHub Copilot");
+    expect(copilotTab.className).toContain("provider-model-rail-button-usage");
+    expect(arcDasharray(copilotTab)).toMatch(/^59(?:\\.0+)? 100$/u);
+
+    const customTab = tabByLabel(/Custom/u);
+    expect(customTab.className).not.toContain("provider-model-rail-button-usage");
+    expect(arcDasharray(customTab)).toBeNull();
+
+    fireEvent.click(customTab);
+    await waitFor(() => expect(customTab.className).toContain("provider-model-rail-button-selected"));
+    const customPanel = panelForTab(customTab);
+    expect(within(customPanel).queryByText("Copilot Custom")).toBeNull();
+    expect(within(customPanel).queryByText(/% left/u)).toBeNull();
+  });
+
+  it("keeps a neutral built-in Copilot tab when built-in has no usage rows", async () => {
+    const status = baseStatus();
+    status.providers = [...(status.providers ?? []), statusRow("copilot")];
+    renderPicker({
+      status,
+      modelOptions: COPILOT_MODEL_OPTIONS,
+      accountUsage: { limits: [] },
+      customAgentUsage: [
+        {
+          id: "copilot-custom",
+          name: "Copilot Custom",
+          providerLogo: "copilot",
+          quota: { state: "ready", remainingPercent: 21, tone: "warning", resetAtMs: Date.now() + 86_400_000 },
+        },
+      ],
+    });
+    await openPicker();
+
+    const copilotTab = tabByLabelStart("GitHub Copilot");
+    expect(copilotTab.className).toContain("provider-model-rail-button-usage");
+    expect(arcDasharray(copilotTab)).toBeNull();
+
+    const customTab = tabByLabel(/Custom/u);
+    expect(customTab.className).not.toContain("provider-model-rail-button-usage");
+    expect(arcDasharray(customTab)).toBeNull();
+  });
+
+  it("falls back to custom Copilot usage and keeps custom model selection when built-in Copilot is signed out", async () => {
+    const status = baseStatus();
+    status.providers = [
+      ...(status.providers ?? []),
+      { ...statusRow("copilot"), state: "sign-in-required", version: null },
+    ];
+    const onChange = vi.fn();
+    renderPicker({
+      status,
+      modelOptions: COPILOT_MODEL_OPTIONS,
+      onChange,
+      accountUsage: {
+        limits: [
+          {
+            id: "copilot",
+            primary: { usedPercent: 41, windowDurationMins: 43_200, resetsAt: NOW_SECONDS + 15 * 86_400 },
+            secondary: null,
+          },
+        ],
+      },
+      customAgentUsage: [
+        {
+          id: "copilot-custom",
+          name: "Copilot Custom",
+          providerLogo: "copilot",
+          quota: { state: "ready", remainingPercent: 21, tone: "warning", resetAtMs: Date.now() + 86_400_000 },
+        },
+      ],
+    });
+    await openPicker();
+
+    const customTab = tabByLabel(/Custom/u);
+    expect(customTab.className).toContain("provider-model-rail-button-usage");
+    expect(arcDasharray(customTab)).toMatch(/^21(?:\\.0+)? 100$/u);
+    const staleCopilotTabs = screen
+      .queryAllByRole("tab")
+      .filter((element) => (element.getAttribute("aria-label") ?? "").startsWith("GitHub Copilot"));
+    for (const tab of staleCopilotTabs) expect(arcDasharray(tab)).toBeNull();
+    fireEvent.click(customTab);
+    await waitFor(() => expect(customTab.className).toContain("provider-model-rail-button-selected"));
+
+    const customPanel = panelForTab(customTab);
+    const customModelOption = within(customPanel).getByRole("option", { name: /GPT-5/u });
+    fireEvent.click(customModelOption);
+    expect(onChange).toHaveBeenCalledWith("copilot-ready/github-copilot/gpt-5", "acp", undefined);
+  });
+
+  it("falls back to custom Copilot usage when built-in Copilot is turned off", async () => {
+    const status = baseStatus();
+    status.providers = [...(status.providers ?? []), { ...statusRow("copilot"), off: true }];
+    renderPicker({
+      status,
+      modelOptions: COPILOT_MODEL_OPTIONS,
+      accountUsage: {
+        limits: [
+          {
+            id: "copilot",
+            primary: { usedPercent: 41, windowDurationMins: 43_200, resetsAt: NOW_SECONDS + 15 * 86_400 },
+            secondary: null,
+          },
+        ],
+      },
+      customAgentUsage: [
+        {
+          id: "copilot-custom",
+          name: "Copilot Custom",
+          providerLogo: "copilot",
+          quota: { state: "ready", remainingPercent: 21, tone: "warning", resetAtMs: Date.now() + 86_400_000 },
+        },
+      ],
+    });
+    await openPicker();
+
+    const customTab = tabByLabel(/Custom/u);
+    expect(customTab.className).toContain("provider-model-rail-button-usage");
+    expect(arcDasharray(customTab)).toMatch(/^21(?:\\.0+)? 100$/u);
+    const staleCopilotTabs = screen
+      .queryAllByRole("tab")
+      .filter((element) => (element.getAttribute("aria-label") ?? "").startsWith("GitHub Copilot"));
+    for (const tab of staleCopilotTabs) expect(arcDasharray(tab)).toBeNull();
   });
 
   it("applies owner/shared quota semantics and lowest shared ring on the owner provider", async () => {
