@@ -52,12 +52,13 @@ function foldedEntry(entry: ChannelMessage): boolean {
 
 /**
  * The rows of a channel page. The thinking and narration of a member's turn fold into one thinking
- * row, as in an agent chat, and show as the steps above the member's answer. Before, each part showed
+ * row, as in an agent chat, and show as the steps above the member's answer. With the Natural style
+ * the narration also shows as the member's progress updates (`narrationRows`). Before, each part showed
  * as a message, and a model that streams its whole reasoning (DeepSeek through OpenCode) showed a
  * very long one.
  */
 export function channelConversationRows(entries: readonly ChannelMessage[]): AgentMessage[] {
-  return toAgentMessages(
+  const rows = toAgentMessages(
     entries.map((entry) => ({ ...entry.message, id: entry.id })),
     undefined,
     (message, index) => {
@@ -65,6 +66,15 @@ export function channelConversationRows(entries: readonly ChannelMessage[]): Age
       return entry ? channelConversationMessage(entry) : toAgentMessage(message);
     },
   );
+  // A thinking row names the member of its turn, so its progress updates show as that member's.
+  const turnAuthors = new Map<string, string>();
+  for (const entry of entries)
+    if (entry.message.turnId && foldedEntry(entry) && entry.author.kind !== "member")
+      turnAuthors.set(entry.message.turnId, entry.author.id);
+  return rows.map((row) => {
+    const author = row.kind === "thinking" && row.turnId ? turnAuthors.get(row.turnId) : undefined;
+    return author ? { ...row, senderAgentId: author } : row;
+  });
 }
 
 /**
@@ -119,8 +129,8 @@ export function firstUnreadChannelMessageId(
 }
 
 /**
- * Everyone the channel waits on: the owner of a running task, the author of a message that is still
- * arriving, and the lead while it chooses an owner. They read as one row under the transcript,
+ * Everyone the channel waits on: the owner of a running task, the author of a message of an active
+ * task that is still arriving, and the lead while it chooses an owner. They read as one row under the transcript,
  * because a channel runs several agents at once and a row for each would push the messages away.
  *
  * The lead's routing turn moves no task out of `queued` and writes no message of its own. Without
@@ -136,9 +146,21 @@ export function channelWorkers(
   hiddenAgentIds: ReadonlySet<string>,
 ): ChannelWorker[] {
   const ids = new Set<string>();
-  for (const task of page.tasks) if (task.state === "running" && task.ownerAgentId) ids.add(task.ownerAgentId);
+  const active = new Set<string>();
+  for (const task of page.tasks) {
+    if (task.state === "running" && task.ownerAgentId) ids.add(task.ownerAgentId);
+    if (task.state === "queued" || task.state === "running" || task.state === "waiting") active.add(task.id);
+  }
+  // A refresh reads only the newest messages, so an older one keeps the copy the view loaded. A
+  // copy loaded while it streamed showed its author as working after the task ended (#4846). A
+  // follow-up queues the task while its turn still writes, so a queued task keeps its writer.
   for (const entry of page.messages)
-    if (entry.message.status === "streaming" && entry.author.kind !== "member") ids.add(entry.author.id);
+    if (
+      entry.message.status === "streaming" &&
+      entry.author.kind !== "member" &&
+      (entry.taskId === null || active.has(entry.taskId))
+    )
+      ids.add(entry.author.id);
   const lead = page.channel.leadAgentId;
   if (
     lead &&

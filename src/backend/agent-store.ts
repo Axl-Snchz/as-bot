@@ -32,6 +32,8 @@ import {
   type AgentSessionSettingOverrides,
   type AgentSummary,
   type AgentUsageLimitReturn,
+  type AvatarColor,
+  type AvatarHue,
   type AvatarImageInput,
   type BusyMessageMode,
   type CreateAgentInput,
@@ -51,6 +53,7 @@ import {
   isAgentSessionSettingResets,
   isAgentTaskLimit,
   isAgentUsageLimitReturn,
+  isAvatarColor,
   isAvatarHue,
   isAvatarSeed,
   isBrowserProfileId,
@@ -59,6 +62,7 @@ import {
   isProviderAccountId,
   isReasoningEffort,
   isSidebarLayoutSnapshot,
+  nearestAvatarHue,
   providerForLegacyModel,
   type SaveAgentProfileResult,
   type SidebarLayoutSnapshot,
@@ -131,7 +135,7 @@ interface StoredState {
   agents: StoredAgent[];
 }
 
-type LegacyStoredAgent = Omit<PersistedStoredAgent, "avatarSeed" | "avatarHue"> & {
+type LegacyStoredAgent = Omit<PersistedStoredAgent, "avatarSeed" | "avatarHue" | "avatarColor"> & {
   avatarShape: string;
   avatarColor: string;
 };
@@ -358,9 +362,11 @@ export class AgentStore {
       const description = limitedText(input.description, "Agent description", INPUT_LIMITS.agentDescription);
       if (!isAvatarSeed(input.avatarSeed)) throw new Error("Invalid avatar seed.");
       if (input.avatarHue !== null && !isAvatarHue(input.avatarHue)) throw new Error("Invalid avatar hue.");
+      if (input.avatarColor != null && !isAvatarColor(input.avatarColor)) throw new Error("Invalid avatar color.");
       const record = this.#createRecord(`agent-${randomUUID()}`, name, "", description);
       record.avatarSeed = input.avatarSeed;
       record.avatarHue = input.avatarHue;
+      applyAvatarColor(record, input.avatarHue, input.avatarColor);
       if (profileOperationId) yield* this.#profileCreationRecovery.begin(record.id, profileOperationId);
       yield* storedIO(() => mkdir(record.workspacePath, { recursive: true, mode: 0o700 }));
       this.#state.agents.unshift(record);
@@ -425,8 +431,15 @@ export class AgentStore {
       if (source.busyMessageMode) record.busyMessageMode = source.busyMessageMode;
       if (source.taskLimit !== undefined) record.taskLimit = source.taskLimit;
       if (source.backupModels) record.backupModels = structuredClone(source.backupModels);
+      // A named profile carries over; "Only this agent" would give the copy a new, empty session.
+      if (source.browserProfileId !== undefined) {
+        record.browserProfileId = source.browserProfileId;
+        record.ownBrowserSession = true;
+      }
       record.avatarSeed = source.avatarSeed;
       record.avatarHue = source.avatarHue;
+      if (source.avatarColor) record.avatarColor = source.avatarColor;
+      if (source.chatColor) record.chatColor = source.chatColor;
 
       const stagedWorkspace = `${record.workspacePath}.openbot-stage`;
       const avatarDirectory = join(this.#avatarsRoot, record.id);
@@ -602,6 +615,8 @@ export class AgentStore {
       avatarUrl: null,
       updatedAt: new Date().toISOString(),
     });
+    // A profile draft names a hue only. The colour stays while the hue is the same.
+    if (draft.avatarHue !== previous.avatarHue) delete agent.avatarColor;
     try {
       this.#persist("agent.updated");
     } catch (error) {
@@ -806,9 +821,18 @@ export class AgentStore {
         if (!isAvatarSeed(input.avatarSeed)) throw new Error("Invalid avatar seed.");
         next.avatarSeed = input.avatarSeed;
       }
-      if (input.avatarHue !== undefined) {
-        if (input.avatarHue !== null && !isAvatarHue(input.avatarHue)) throw new Error("Invalid avatar hue.");
-        next.avatarHue = input.avatarHue;
+      if (input.avatarHue !== undefined && input.avatarHue !== null && !isAvatarHue(input.avatarHue)) {
+        throw new Error("Invalid avatar hue.");
+      }
+      if (input.avatarColor != null && !isAvatarColor(input.avatarColor)) throw new Error("Invalid avatar color.");
+      if (input.avatarHue !== undefined || input.avatarColor !== undefined) {
+        const hue = input.avatarHue === undefined ? next.avatarHue : input.avatarHue;
+        applyAvatarColor(next, hue, input.avatarColor, hue !== next.avatarHue);
+      }
+      if (input.chatColor === null) delete next.chatColor;
+      else if (input.chatColor !== undefined) {
+        if (!isAvatarColor(input.chatColor)) throw new Error("Invalid chat color.");
+        next.chatColor = input.chatColor;
       }
       // A model the user picks ends the way back from a usage limit.
       if (
@@ -861,6 +885,8 @@ export class AgentStore {
       if (next.allowAutomation === undefined) delete agent.allowAutomation;
       if (next.allowNewChat === undefined) delete agent.allowNewChat;
       if (next.quickAcknowledgement === undefined) delete agent.quickAcknowledgement;
+      if (next.avatarColor === undefined) delete agent.avatarColor;
+      if (next.chatColor === undefined) delete agent.chatColor;
       try {
         this.#persist(modelChange ? "agent.model-changed" : "agent.updated", modelChange);
       } catch (error) {
@@ -877,6 +903,8 @@ export class AgentStore {
         if (previous.allowAutomation === undefined) delete agent.allowAutomation;
         if (previous.allowNewChat === undefined) delete agent.allowNewChat;
         if (previous.quickAcknowledgement === undefined) delete agent.quickAcknowledgement;
+        if (previous.avatarColor === undefined) delete agent.avatarColor;
+        if (previous.chatColor === undefined) delete agent.chatColor;
         throw error;
       }
       return { ...agent };
@@ -1545,6 +1573,22 @@ export class AgentStore {
     }
   }, Effect.uninterruptible).bind(this);
 
+  /**
+   * After "Delete history": the row shows the localized "no messages" text, and the agent keeps its
+   * place in the list.
+   */
+  clearPreview = Effect.fn("AgentStore.clearPreview")(function* (
+    this: AgentStore,
+    id: string,
+  ): Effect.fn.Return<void, StoredStateFailure> {
+    try {
+      this.#requireAgent(id).preview = "";
+      this.#persist("agent.preview-updated");
+    } catch (cause) {
+      return yield* new StoredStateFailure({ cause });
+    }
+  }, Effect.uninterruptible).bind(this);
+
   #readStateEffect = Effect.fn("AgentStore.readState")(function* (
     this: AgentStore,
   ): Effect.fn.Return<StoredState, StoredStateFailure> {
@@ -1896,6 +1940,8 @@ function isStoredAgent(value: unknown): value is PersistedStoredAgent {
     (record.hiddenAt === undefined || isHiddenAt(record.hiddenAt)) &&
     isAvatarSeed(record.avatarSeed) &&
     (record.avatarHue === null || isAvatarHue(record.avatarHue)) &&
+    (record.avatarColor === undefined || isAvatarColor(record.avatarColor)) &&
+    (record.chatColor === undefined || isAvatarColor(record.chatColor)) &&
     isMarketplaceSource(record.marketplaceSource)
   );
 }
@@ -2012,6 +2058,14 @@ function readStoredAgent(value: unknown): ReadStoredAgent | UnreadableStoredAgen
     value.hiddenAt === undefined || isHiddenAt(value.hiddenAt)
       ? value.hiddenAt
       : reset("hiddenAt", new Date().toISOString());
+  const avatarHue =
+    value.avatarHue === null || isAvatarHue(value.avatarHue) ? value.avatarHue : reset("avatarHue", null);
+  const avatarColor =
+    value.avatarColor === undefined || isAvatarColor(value.avatarColor)
+      ? value.avatarColor
+      : reset("avatarColor", undefined);
+  const chatColor =
+    value.chatColor === undefined || isAvatarColor(value.chatColor) ? value.chatColor : reset("chatColor", undefined);
   let marketplaceSource: StoredAgent["marketplaceSource"];
   if (value.marketplaceSource !== undefined) {
     if (isMarketplaceSource(value.marketplaceSource)) {
@@ -2046,7 +2100,12 @@ function readStoredAgent(value: unknown): ReadStoredAgent | UnreadableStoredAgen
     preview: isString(value.preview) ? value.preview : reset("preview", NEW_AGENT_PREVIEW),
     updatedAt: isString(value.updatedAt) || value.updatedAt === null ? value.updatedAt : reset("updatedAt", null),
     avatarSeed: isAvatarSeed(value.avatarSeed) ? value.avatarSeed : reset("avatarSeed", id),
-    avatarHue: value.avatarHue === null || isAvatarHue(value.avatarHue) ? value.avatarHue : reset("avatarHue", null),
+    avatarHue,
+    // A released build reads only the fields it knows, so its next write removes the colour. A stored
+    // colour is thus always the newest choice, and it stays even if the nearest hue changes later.
+    ...(avatarColor === undefined ? {} : { avatarColor }),
+    // Only a build with chat colours keeps it. It is separate from the avatar colour.
+    ...(chatColor === undefined ? {} : { chatColor }),
     avatarUrl: isString(value.avatarUrl) ? value.avatarUrl : null,
     ...(provider === undefined ? {} : { provider }),
     ...(access === undefined ? {} : { access }),
@@ -2113,6 +2172,26 @@ function isLegacyStoredAgent(value: unknown): value is LegacyStoredAgent {
     isString(record.avatarColor) &&
     isOneOf(LEGACY_AVATAR_COLORS, record.avatarColor)
   );
+}
+
+/**
+ * Sets the colour of an agent. A colour sets the nearest released hue, which released apps and Team
+ * API peers draw. `null` removes the colour. With no colour given, a changed hue removes the colour:
+ * a released app or peer, which knows only hues, chose another colour.
+ */
+function applyAvatarColor(
+  agent: Pick<StoredAgent, "avatarHue" | "avatarColor">,
+  hue: AvatarHue | null,
+  color: AvatarColor | null | undefined,
+  hueChanged = true,
+): void {
+  if (color) {
+    agent.avatarColor = color;
+    agent.avatarHue = nearestAvatarHue(color);
+    return;
+  }
+  agent.avatarHue = hue;
+  if (color === null || hueChanged) delete agent.avatarColor;
 }
 
 function migrateLegacyAgent(agent: LegacyStoredAgent): StoredAgent {

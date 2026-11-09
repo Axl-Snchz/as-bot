@@ -5,9 +5,11 @@ import {
   withAgentThreadBranches,
 } from "@openbot/contracts/team-protocol/agent-thread-branches-v1";
 import { AGENT_THREAD_FILES_CAPABILITY } from "@openbot/contracts/team-protocol/agent-thread-files-v1";
+import { AGENT_THREAD_PAGES_CAPABILITY } from "@openbot/contracts/team-protocol/agent-thread-pages-v1";
 import { AGENT_THREAD_READS_CAPABILITY } from "@openbot/contracts/team-protocol/agent-thread-reads-v1";
 import { AGENT_THREAD_REPLIES_CAPABILITY } from "@openbot/contracts/team-protocol/agent-thread-replies-v1";
 import { AGENT_THREADS_CAPABILITY } from "@openbot/contracts/team-protocol/agent-threads-v1";
+import { MESSAGE_DELETE_CAPABILITY, MESSAGE_DELETE_ROUTES } from "@openbot/contracts/team-protocol/message-delete-v1";
 import { runTeamEffect } from "@openbot/team-client";
 import {
   agentTaskControl,
@@ -17,6 +19,7 @@ import {
   listAgentThreadBranches,
   markAgentThreadRead,
   readAgentTask,
+  readAgentThreadPage,
   renameAgentThread,
   sendAgentTaskMessage,
   startAgentTask,
@@ -63,6 +66,12 @@ function webAgentTasksPort(request: () => TeamApiRequest, branchable: () => bool
           : listAgentTasks(host, agentId),
       ),
     readTask: (input) => run((host) => readAgentTask(host, input).pipe(Effect.map(withoutPreviewUrls))),
+    readTaskPage: (input) =>
+      run((host) =>
+        readAgentThreadPage(host, input).pipe(
+          Effect.map((page) => ({ ...page, conversation: withoutPreviewUrls(page.conversation) })),
+        ),
+      ),
     startTask: (input) => run((host) => startAgentTask(host, input)),
     sendToTask: (input) => run((host) => sendAgentTaskMessage(host, input)),
     stopTask: (input) => run((host) => agentTaskControl(host, "stop", input)),
@@ -72,6 +81,10 @@ function webAgentTasksPort(request: () => TeamApiRequest, branchable: () => bool
     deleteTask: (input) => run((host) => deleteAgentThread(host, input)),
     markTaskRead: (input) => run((host) => markAgentThreadRead(host, input)),
     branchTask: (input) => run((host) => branchAgentThread(host, input)),
+    // The response is empty.
+    deleteTaskMessage: async ({ agentId, taskId, messageId }) => {
+      await request()("POST", MESSAGE_DELETE_ROUTES.task, () => undefined, { agentId, taskId, messageId });
+    },
   };
 }
 
@@ -98,6 +111,8 @@ export function createWebAgentThreads(options: {
     branchable,
     filesAccepted: () => workspace.state.capabilities.includes(AGENT_THREAD_FILES_CAPABILITY),
     repliable: () => workspace.state.capabilities.includes(AGENT_THREAD_REPLIES_CAPABILITY),
+    messageDeletable: () => workspace.state.capabilities.includes(MESSAGE_DELETE_CAPABILITY),
+    pageable: () => workspace.state.capabilities.includes(AGENT_THREAD_PAGES_CAPABILITY),
     // A reconnect sends a runtime snapshot, which reads the threads again.
     reloadKey: () => null,
   });

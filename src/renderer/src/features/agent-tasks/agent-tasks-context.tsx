@@ -1,3 +1,5 @@
+import { AGENT_THREAD_PAGES_CAPABILITY } from "@openbot/contracts/team-protocol/agent-thread-pages-v1";
+import { MESSAGE_DELETE_CAPABILITY } from "@openbot/contracts/team-protocol/message-delete-v1";
 import { createSimpleContext } from "../../simple-context";
 import { useAgents } from "../agents/agents-context";
 import { useServers } from "../servers/servers-context";
@@ -28,7 +30,13 @@ const AgentTasks = createSimpleContext({
       branchable: () => local() || activeServerSupportsCapability("agent-thread-branches-v1"),
       filesAccepted: () => local() || activeServerSupportsCapability("agent-thread-files-v1"),
       repliable: () => local() || activeServerSupportsCapability("agent-thread-replies-v1"),
-      reloadKey: () => agentStatus().phase,
+      messageDeletable: () => local() || activeServerSupportsCapability(MESSAGE_DELETE_CAPABILITY),
+      pageable: () => local() || activeServerSupportsCapability(AGENT_THREAD_PAGES_CAPABILITY),
+      // A server switch or reconnect reads the lists again, and so does a start of the agent.
+      reloadKey: () => {
+        const server = activeServer();
+        return `${server?.id ?? ""}:${server?.state ?? ""}:${agentStatus().phase}`;
+      },
     });
   },
 });

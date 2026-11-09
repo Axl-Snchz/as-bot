@@ -8,9 +8,9 @@
  * list. That belongs in the log, not in an error the user is asked to read.
  *
  * OpenBot's own bridge servers carry its name, and stay visible: a failure there is a failure of
- * this app. So does a server this app configured - the user asked for it here, and the reason it
- * does not start is something only they can fix. `configuredNames` is what separates the two: a
- * server the user configured in their own provider files is still nobody's failure but theirs.
+ * this app. A server this app configured is an MCP line too. The caller finds that server and
+ * reports it as the server's failure, not the provider's: the user asked for it here, and only they
+ * can fix it.
  *
  * Grok's CLI also loads the servers in `~/.claude.json`, `~/.cursor/mcp.json` and `.mcp.json`. One
  * there that asks for OAuth ends its transport with the `rmcp` worker's own sentence,
@@ -19,10 +19,22 @@
  * error" toast (#1199). The worker's sentence is matched as it stands, because no other part of a
  * provider writes it.
  */
-export function isMcpSubsystemDiagnostic(message: string, configuredNames: readonly string[] = []): boolean {
+export function isMcpSubsystemDiagnostic(message: string): boolean {
   if (/openbot/i.test(message)) return false;
-  if (configuredNames.some((name) => name && message.includes(name))) return false;
   return /\b(mcp|rmcp)\b|\bworker quit with (?:fatal|join error|reason):/i.test(message);
+}
+
+/**
+ * Whether an MCP diagnostic says that the server refused the provider for want of a sign-in.
+ *
+ * Grok's `rmcp` worker writes `AuthRequired(…)` for an http server that answers 401 with an OAuth
+ * challenge. Other CLIs write the status next to `HTTP` or `status`, or the word. A bare `401` is
+ * not enough: a port, an id or a line number can be 401.
+ */
+export function isMcpSignInDiagnostic(message: string): boolean {
+  return /\bAuthRequired\b|\bunauthori[sz]ed\b|\bnot authenticated\b|\b(?:HTTP|status(?:\s+code)?)\W{0,3}401\b/i.test(
+    message,
+  );
 }
 
 /**
@@ -155,6 +167,20 @@ export function isUsageReadDiagnostic(message: string): boolean {
 }
 
 /**
+ * Whether a provider diagnostic is Grok's own record of a `git` command that could not start.
+ *
+ * Grok's CLI runs `git` to read the repository state, and logs `ERROR git_cli: Command::output()
+ * FAILED (spawn error) error=program not found` on stderr when `git` is not on the PATH, as on a
+ * Windows computer without Git. Grok continues without the repository state. The user met the line
+ * as a "Grok error" toast with nothing failing (#4789). It belongs in the log.
+ *
+ * Only a spawn failure counts. A `git` command that ran and failed stays visible.
+ */
+export function isGitSpawnDiagnostic(message: string): boolean {
+  return /\bERROR\s+git_cli:\s+Command::output\(\) FAILED \(spawn error\)/.test(message);
+}
+
+/**
  * Whether a provider diagnostic is the ACP SDK's own copy of an error that the agent also answered.
  *
  * The TypeScript ACP SDK that a Node agent is built on writes `Error handling request`, the whole
@@ -206,6 +232,25 @@ export function isGlogBelowErrorDiagnostic(message: string): boolean {
 }
 
 /**
+ * A Rust log record whose own level is below error, as in
+ * `2026-11-04T23:00:00.123456Z  INFO devin::acp: request failed, will retry` (`tracing`) or
+ * `[2026-11-04T23:00:00Z INFO  devin::acp] …` (`env_logger`).
+ *
+ * ACP gives stderr to the agent for its logs; a failure reaches OpenBot as an answer or as the exit.
+ * Devin CLI 3000.11.234 writes its info records to stderr, and a word such as "failed" in one let it
+ * through as a provider error (#5064). The level of the record decides instead.
+ *
+ * Only a record that opens with the level, after an optional timestamp, counts. An `ERROR` record,
+ * or text without a level - a Rust panic included - stays visible.
+ */
+const RUST_LOG_RECORD =
+  /^\[?(?:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?\s+)?(?:TRACE|DEBUG|INFO|WARN)\s/u;
+
+export function isRustLogBelowErrorDiagnostic(message: string): boolean {
+  return RUST_LOG_RECORD.test(message);
+}
+
+/**
  * The timestamp a CLI's log formatter writes before a record, as in
  * `2026-09-23T06:57:23.278161Z ERROR …`. It is removed from what the renderer shows: it is not
  * something to act on, and it makes every repeat of one failure a new message.
@@ -240,7 +285,9 @@ export function isUsageLimitDiagnostic(message: string): boolean {
  * plan's rolling, weekly and monthly windows name no reset: `429: {"type":"GoUsageLimitError",
  * "message":"Go usage limit exceeded"}` (#4256). The z.ai GLM Coding Plan writes "Usage limit reached
  * for 5 hour. Your limit will reset at 2026-11-02 17:37:38" and "Weekly/Monthly Limit Exhausted. Your
- * limit will reset at …" (#4469). Its reset names no zone, so it is not read. A spent credit
+ * limit will reset at …" (#4469). Its reset names no zone, so it is not read. Grok's free tier
+ * writes "subscription:free-usage-exhausted: You've used all the included free usage for model …
+ * Usage resets over a rolling 24-hour window" (#4869). A spent credit
  * balance or quota does not reset, so it is not one: holding work for it would wait forever and hide
  * the provider's reason. A short request-rate throttle says "rate limit".
  */
@@ -252,7 +299,8 @@ export function isPlanLimitDiagnostic(message: string): boolean {
     /\b(?:session|weekly) (?:usage )?limit\b.{0,80}\b(?:reached|resets?)\b/iu.test(message) ||
     /\b(?:GoUsageLimitError|Go usage limit exceeded)\b/u.test(message) ||
     /\busage limit reached for \d+ ?hours?\b/iu.test(message) ||
-    /\b(?:daily|weekly|monthly) limit exhausted\b/iu.test(message)
+    /\b(?:daily|weekly|monthly) limit exhausted\b/iu.test(message) ||
+    /\bsubscription:free-usage-exhausted\b/u.test(message)
   );
 }
 

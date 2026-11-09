@@ -6,6 +6,8 @@ export const messages = {
   "error.backend.databaseIntegrity": "База данных OpenBot не прошла проверку целостности.",
   "error.backend.webhookRouteLimit": "На хосте может быть не более {limit} регулярных задач с вебхуком.",
   "error.backend.webhookSettingsInvalid": "Проверьте настройки вебхука и повторите попытку.",
+  "error.backend.webhookSenderSecretInvalid":
+    "Вставьте полный секрет подписи отправителя. В нём от 16 до 1024 символов и нет пробелов.",
   "error.backend.webhookRouteUnavailable":
     "Публичный маршрут вебхука не готов. Проверьте подключение хоста и повторите попытку.",
   "error.backend.browserViewRemoteOnly": "Просмотр браузера в реальном времени доступен только для удалённого хоста.",
@@ -57,6 +59,8 @@ export const messages = {
   "error.backend.channelLeadModelUnavailable": "Модель ведущего канала недоступна.",
   "error.backend.contextCompactionIneffective":
     "Сжатие не уменьшает этот чат: после двух сжатий он всё ещё занимает {percent}% окна контекста модели, поэтому OpenBot перестаёт его сжимать. Большую часть окна занимают инструменты и инструкции. Отключите MCP-серверы или управление компьютером, которые не нужны этому агенту, или выберите модель с большим окном. Затем начните новый чат.",
+  "error.backend.contextCompactionStopped":
+    "Два сжатия этого чата подряд не удались, поэтому OpenBot больше не сжимает его автоматически. Каждая попытка отправляет весь чат модели и расходует лимит тарифа. Выберите «Сжать сейчас», чтобы попробовать снова, или начните новый чат.",
   "error.backend.providerRetrying":
     "Провайдер не выполнил этот запрос {attempts} раза и пробует снова. Если агент не продолжит, остановите ход.",
   "error.backend.providerRetryingLargeContext":
@@ -67,6 +71,13 @@ export const messages = {
     "У канала есть неподтверждённый запуск назначения. Проверьте его результат, прежде чем удалять канал.",
   "error.backend.channelNotFound": "Канал не найден.",
   "error.backend.channelMemberUnavailable": "Участник канала недоступен.",
+  "error.backend.channelWaitBeforeNewConversation":
+    "Дождитесь окончания работы в этом канале, затем начните новый разговор.",
+  "error.backend.channelWaitBeforeCompact": "Дождитесь окончания работы в этом канале, затем сожмите его.",
+  "error.backend.channelWaitBeforeDeleteHistory":
+    "Дождитесь окончания работы в этом канале, затем удалите его историю.",
+  "error.backend.channelCompactUnavailable":
+    "Сейчас ни один участник этого канала не может сжать контекст. Сначала участник должен ответить в канале, а его провайдер должен поддерживать сжатие.",
   "error.backend.channelArchived": "Восстановите этот канал, прежде чем отправлять сообщения или менять задачи.",
   "error.backend.channelReferenceUnavailable": "Сообщение канала, на которое сделана ссылка, недоступно.",
   "error.backend.channelTaskNotFound": "Задача канала не найдена.",
@@ -200,6 +211,10 @@ export const messages = {
   "error.backend.agentWaitRemoteUnsupported": "Открытые ожидания доступны только для агентов на этом компьютере.",
   "error.backend.markUnreadRemoteUnsupported":
     "Отметить сообщение непрочитанным можно только для агентов на этом компьютере.",
+  "error.backend.messageDeleteUnsupported": "Этот сервер не поддерживает удаление сообщений.",
+  "error.backend.messageDeleteNotFound": "Этого сообщения нет в чате.",
+  "error.backend.messageDeleteBusy": "Это сообщение входит в выполняемый ход. Удалите его, когда ход закончится.",
+  "error.backend.messageDeleteForbidden": "Вы можете удалять только отправленные вами сообщения.",
   "error.backend.routineFlowHandoffFailed": "Регулярной задаче не удалось передать работу этому агенту.",
   "error.backend.mcpServerLimit": "OpenBot хранит не более {limit} серверов MCP.",
   "error.backend.mcpServerNameTaken": "Сервер MCP с именем {name} уже существует.",
@@ -228,6 +243,10 @@ export const messages = {
   "error.backend.mcpServerExited":
     "Сервер остановился, не ответив. Запустите команду в терминале, чтобы увидеть ошибку.",
   "error.backend.mcpServerFailedToStart": "Сервер не запустился: {reason}",
+  "error.backend.mcpServerSignInForProvider":
+    "{provider} не может использовать MCP-сервер {name}: сервер требует входа. Откройте настройки MCP и выберите «Войти».",
+  "error.backend.mcpServerFailedForProvider":
+    "{provider} не может запустить MCP-сервер {name}. Откройте настройки MCP и выберите «Проверить подключение», чтобы увидеть причину.",
   "error.backend.mcpOAuthProxyUnavailable":
     "OpenBot не смог запустить локальное подключение для входа на этот сервер. Перезапустите OpenBot и повторите попытку.",
   "error.backend.mcpOAuthSignInNeeded":
@@ -301,6 +320,19 @@ export const messages = {
   "error.backend.browserProfileNameTaken": "Профиль браузера с таким названием уже существует.",
   "error.backend.browserSessionInUse": "Вкладка всё ещё использует этот сеанс браузера. Повторите попытку.",
   "error.backend.browserProfileLimit": "Можно создать не более {limit} профилей браузера.",
+  "error.backend.browserProxyNotFound": "Этот прокси больше не существует.",
+  "error.backend.browserProxyAddressInvalid":
+    "Введите адрес прокси, например socks5://host:1080 или http://user:password@host:3128.",
+  "error.backend.browserProxyLimit": "Можно создать не более {limit} прокси.",
+  "error.backend.browserProxyTaken": "Прокси с этим адресом уже существует.",
+  "error.backend.browserProxyChanged":
+    "Этот прокси изменился после того, как вы его открыли. Проверьте его ещё раз и повторите попытку.",
+  "error.backend.browserProxyUnreachable": "Прокси {name} не отвечает, поэтому страница не открылась.",
+  "error.backend.browserProxySignInRefused": "Прокси {name} отклонил вход, поэтому страница не открылась.",
+  "error.backend.browserProxyComputerUnreachable":
+    "Компьютер этого профиля не отвечает, поэтому страница не открылась.",
+  "error.backend.browserCertificateUntrusted":
+    "Сертификат безопасности этого сайта не является доверенным, поэтому страница не открылась.",
   "error.backend.browserLowMemory":
     "На этом сервере мало памяти, поэтому браузер не может открыть ещё одну вкладку. Закройте вкладку или дождитесь завершения работы других агентов.",
   "error.backend.browserOpenFailed": "Не удалось открыть {url}: {reason}",

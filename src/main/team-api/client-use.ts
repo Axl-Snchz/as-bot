@@ -1,6 +1,7 @@
 import { TEAM_API_ROUTES } from "@openbot/contracts/team-api-routes";
 import { AGENT_ADMIN_ROUTES } from "@openbot/contracts/team-protocol/agent-admin-v1";
 import { AGENT_BACKUP_MODELS_ROUTES } from "@openbot/contracts/team-protocol/agent-backup-models-v1";
+import { AGENT_COLORS_ROUTES } from "@openbot/contracts/team-protocol/agent-colors-v1";
 import { AGENT_FAST_MODE_ROUTES } from "@openbot/contracts/team-protocol/agent-fast-mode-v1";
 import { AGENT_FOLDERS_ROUTES } from "@openbot/contracts/team-protocol/agent-folders-v1";
 import { AGENT_HOST_SETTINGS_ROUTES } from "@openbot/contracts/team-protocol/agent-host-settings-v1";
@@ -16,12 +17,14 @@ import { AGENT_PUBLISH_ROUTES } from "@openbot/contracts/team-protocol/agent-pub
 import { AGENT_TASK_LIMIT_ROUTES } from "@openbot/contracts/team-protocol/agent-task-limit-v1";
 import { BROWSER_PROFILES_ROUTES } from "@openbot/contracts/team-protocol/browser-profiles-v1";
 import { CHANNEL_ROUTES } from "@openbot/contracts/team-protocol/channels-v1";
+import { CHAT_COLORS_ROUTES } from "@openbot/contracts/team-protocol/chat-colors-v1";
 import { COMPUTER_ACTIVITY_ROUTES } from "@openbot/contracts/team-protocol/computer-activity-v1";
 import { CUSTOM_AGENTS_ROUTES } from "@openbot/contracts/team-protocol/custom-agents-v1";
 import { CUSTOM_PROVIDER_HARNESS_ROUTES } from "@openbot/contracts/team-protocol/custom-provider-harness-v1";
 import { DISCORD_ACCESS_ROUTES } from "@openbot/contracts/team-protocol/discord-access-v1";
 import { FOCUS_USE_ROUTES } from "@openbot/contracts/team-protocol/focus-use-v1";
 import { HOST_MEMBER_UPDATE_ROUTES } from "@openbot/contracts/team-protocol/host-member-update-v1";
+import { HOST_PERSONALITY_ROUTES } from "@openbot/contracts/team-protocol/host-personality-v1";
 import { HOST_RELEASE_ROUTES } from "@openbot/contracts/team-protocol/host-release-v1";
 import { HOST_TIMEZONE_ROUTES } from "@openbot/contracts/team-protocol/host-timezone-v1";
 import { HOST_UPDATE_ROUTES } from "@openbot/contracts/team-protocol/host-update-v1";
@@ -39,6 +42,7 @@ import { ANDROID_PUSH_NOTIFICATIONS_ROUTES } from "@openbot/contracts/team-proto
 import { PUSH_NOTIFICATIONS_ROUTES } from "@openbot/contracts/team-protocol/push-notifications-v1";
 import { ROUTINE_RECOVERY_ROUTES } from "@openbot/contracts/team-protocol/routine-recovery-v1";
 import { ROUTINE_RESULTS_ROUTES } from "@openbot/contracts/team-protocol/routine-results-v1";
+import { ROUTINE_RUN_PLACE_ROUTES } from "@openbot/contracts/team-protocol/routine-run-place-v1";
 import { SERVER_AUDIT_ROUTES } from "@openbot/contracts/team-protocol/server-audit-v1";
 import { SHARED_TABLES_ROUTES } from "@openbot/contracts/team-protocol/shared-tables-v1";
 import { SIDEBAR_PINS_ROUTES } from "@openbot/contracts/team-protocol/sidebar-pins-v1";
@@ -47,6 +51,7 @@ import { STORAGE_DISK_ROUTES } from "@openbot/contracts/team-protocol/storage-di
 import { STORAGE_ROUTES } from "@openbot/contracts/team-protocol/storage-v1";
 import { VAULT_ROUTES } from "@openbot/contracts/team-protocol/vault-v1";
 import { VAULT_V2_ROUTES } from "@openbot/contracts/team-protocol/vault-v2";
+import { WHATSAPP_CONNECTOR_ROUTES } from "@openbot/contracts/team-protocol/whatsapp-connector-v1";
 
 /**
  * POST routes that a client sends with no user action: polls, previews, mark-read, and reads that use
@@ -63,10 +68,12 @@ const PASSIVE_ROUTES: ReadonlySet<string> = new Set([
   ROUTINE_RECOVERY_ROUTES.listRuns,
   ROUTINE_RESULTS_ROUTES.options,
   ROUTINE_RESULTS_ROUTES.destination,
+  ROUTINE_RUN_PLACE_ROUTES.list,
   HOST_UPDATE_ROUTES.status,
   HOST_RELEASE_ROUTES.status,
   HOST_MEMBER_UPDATE_ROUTES.status,
   HOST_TIMEZONE_ROUTES.settings,
+  HOST_PERSONALITY_ROUTES.settings,
   AGENT_MEMORY_LIMIT_ROUTES.settings,
   MEMORY_REVIEW_ROUTES.settings,
   PROMPT_CACHE_TTL_ROUTES.settings,
@@ -75,10 +82,14 @@ const PASSIVE_ROUTES: ReadonlySet<string> = new Set([
   PROVIDER_DEFAULT_ROUTES.settings,
   LOCAL_SERVERS_ROUTES.list,
   DISCORD_ACCESS_ROUTES.access,
+  WHATSAPP_CONNECTOR_ROUTES.overview,
+  WHATSAPP_CONNECTOR_ROUTES.linkState,
   LIVE_ACTIVITY_PUSH_ROUTES.register,
   LIVE_ACTIVITY_PUSH_ROUTES.remove,
   AGENT_NOTIFICATION_LEVELS_ROUTES.read,
   SIDEBAR_PINS_ROUTES.read,
+  AGENT_COLORS_ROUTES.read,
+  CHAT_COLORS_ROUTES.read,
   SERVER_AUDIT_ROUTES.read,
   PUSH_NOTIFICATIONS_ROUTES.register,
   PUSH_NOTIFICATIONS_ROUTES.remove,

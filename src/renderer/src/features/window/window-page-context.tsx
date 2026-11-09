@@ -1,4 +1,4 @@
-import type { SettingsPagePlacement } from "@openbot/ui/features/settings/SettingsDialogShell";
+import type { SettingsPageBack, SettingsPagePlacement } from "@openbot/ui/features/settings/SettingsDialogShell";
 import { createEffect, createMemo, createSignal, untrack } from "solid-js";
 import { createSimpleContext } from "../../simple-context";
 import { useServerSettings } from "../servers/server-settings";
@@ -13,14 +13,15 @@ export type WindowPage =
   | "schedule"
   | "workflows"
   | "usage"
+  | "library"
   | "marketplace"
   | "settings"
   | "server-settings";
 
 /**
  * How a page sits in the window. The tasks page shows in the middle pane, as the agents do. The agent
- * list beside it is hidden until the user shows it. A settings page starts below the top row. The title of a schedule, workflows, usage or
- * Marketplace page goes in the top row after the server menu.
+ * list beside it is hidden until the user shows it. A settings page starts below the top row. The title of a schedule, workflows, usage,
+ * Library or Marketplace page goes in the top row after the server menu.
  */
 export type WindowPageKind = "agents" | "settings" | "titled";
 
@@ -50,7 +51,7 @@ const context = createSimpleContext({
     const usage = useUsage();
     const { activeServerId } = useServers();
     /** The elements of the settings page that the settings panel shows in. The page sets them. */
-    const [settingsMounts, setSettingsMounts] = createSignal<{ nav: HTMLElement; content: HTMLElement } | undefined>();
+    const [settingsMounts, setSettingsMounts] = createSignal<SettingsPagePlacement | undefined>();
 
     const page = createMemo<WindowPage>(() => {
       if (serverSettings.serverSettingsOpen()) return "server-settings";
@@ -107,11 +108,26 @@ const context = createSimpleContext({
       if (untrack(serverSettings.serverSettingsOpen)) untrack(() => serverSettings.openServerSettings(serverId, null));
     });
 
+    /** The way back from the open detail page of each settings page. */
+    const [personalBack, setPersonalBack] = createSignal<SettingsPageBack | null>(null);
+    const [serverBack, setServerBack] = createSignal<SettingsPageBack | null>(null);
+    const placementFor = (kind: SettingsKind) =>
+      createMemo<SettingsPagePlacement | undefined>(() => {
+        const mounts = settingsMounts();
+        if (!mounts || page() !== (kind === "personal" ? "settings" : "server-settings")) return undefined;
+        return { ...mounts, onBack: (back) => (kind === "personal" ? setPersonalBack(back) : setServerBack(back)) };
+      });
+    const placements = { personal: placementFor("personal"), server: placementFor("server") };
+
     /** Where the panel of a settings page shows, or nothing while that page is not on screen. */
     function settingsPlacement(kind: SettingsKind): SettingsPagePlacement | undefined {
-      const mounts = settingsMounts();
-      if (!mounts || page() !== (kind === "personal" ? "settings" : "server-settings")) return undefined;
-      return mounts;
+      return placements[kind]();
+    }
+
+    /** The way back from the detail page that shows, such as Providers › ChatGPT, or nothing. */
+    function pageBack(): SettingsPageBack | null {
+      if (page() === "settings") return personalBack();
+      return page() === "server-settings" ? serverBack() : null;
     }
 
     return {
@@ -122,6 +138,7 @@ const context = createSimpleContext({
       setTasksAgentsOpen: (open: boolean) => setTasksAgentsOpen(open),
       setSettingsMounts,
       settingsPlacement,
+      pageBack,
       /** Shows the agents and closes the other pages. */
       showAgents() {
         settings.setAppSettingsOpen(false);
@@ -144,6 +161,10 @@ const context = createSimpleContext({
       openUsage(source: HTMLElement | null) {
         const serverId = activeServerId();
         if (serverId) usage.openUsage(serverId, source);
+      },
+      openLibrary(source: HTMLElement | null) {
+        const serverId = activeServerId();
+        if (serverId) usage.openLibrary(serverId, source);
       },
       openSettings(source: HTMLElement | null) {
         settings.openAppSettings(source);

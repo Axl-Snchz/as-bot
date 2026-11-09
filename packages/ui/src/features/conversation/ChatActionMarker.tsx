@@ -36,6 +36,7 @@ import { AgentAvatar } from "../agents/AgentAvatar";
 import type { AgentInstructionsFileCalls } from "./AgentInstructionsView";
 import { formatChatTimestamp } from "./chat-timestamp";
 import { InstructionsChangeActions } from "./InstructionsChangeActions";
+import { MAIN_THREAD_ID } from "./threads/thread-types";
 
 interface ChatActionMarkerProps {
   marker: ChatActionMarkerModel;
@@ -43,8 +44,13 @@ interface ChatActionMarkerProps {
   announce?: boolean | undefined;
   onOpenSkill?: ((skill: { skillId: string }) => void) | undefined;
   routineAvailable?: boolean | undefined;
-  onSelectAgent: (agentId: string) => void;
+  onSelectAgent: (agentId: string, tabId?: string) => void;
   onOpenRoutine?: ((routine: { routineId: string; name: string }) => void) | undefined;
+  /**
+   * The action that opens the side thread where a routine runs, by routine id. Absent, or undefined
+   * for a routine, when the routine has no thread: its runs then show in the chat.
+   */
+  openRoutineThread?: ((routineId: string) => (() => void) | undefined) | undefined;
   onOpenHostedSite?: ((url: string) => void) | undefined;
   /** Opens or closes the messages of a run, or the runs of a group, whose marker sets `expanded`. */
   onToggleRoutineRun?: ((marker: RoutineRunToggleMarkerModel) => void) | undefined;
@@ -120,6 +126,7 @@ export function ChatActionMarker(props: ChatActionMarkerProps) {
                   routineAvailable={props.routineAvailable}
                   onSelectAgent={props.onSelectAgent}
                   onOpenRoutine={props.onOpenRoutine}
+                  openRoutineThread={props.openRoutineThread}
                   onOpenHostedSite={props.onOpenHostedSite}
                   onToggleRoutineRun={props.onToggleRoutineRun}
                   onToggleAgentMessage={props.onToggleAgentMessage}
@@ -139,6 +146,7 @@ export function ChatActionMarker(props: ChatActionMarkerProps) {
               routineAvailable={props.routineAvailable}
               onSelectAgent={props.onSelectAgent}
               onOpenRoutine={props.onOpenRoutine}
+              openRoutineThread={props.openRoutineThread}
               onToggle={props.onToggleRoutineRun ? () => props.onToggleRoutineRun?.(group()) : undefined}
             />
           )}
@@ -181,7 +189,7 @@ function MarkerGroup(
     drawnCount: number;
     agents: AgentProfile[];
     routineAvailable?: boolean | undefined;
-    onSelectAgent: (agentId: string) => void;
+    onSelectAgent: (agentId: string, tabId?: string) => void;
     onOpenRoutine?: ((routine: { routineId: string; name: string }) => void) | undefined;
     expanded?: boolean | undefined;
     onToggle?: (() => void) | undefined;
@@ -268,7 +276,7 @@ function AgentMessageGroupMarker(
     group: AgentMessageGroupMarkerModel;
     agents: AgentProfile[];
     drawnMessageCount: number;
-    onSelectAgent: (agentId: string) => void;
+    onSelectAgent: (agentId: string, tabId?: string) => void;
   },
 ) {
   const { t, format } = useText();
@@ -341,8 +349,9 @@ function RoutineRunGroupMarker(props: {
   agents: AgentProfile[];
   drawnRunCount: number;
   routineAvailable?: boolean | undefined;
-  onSelectAgent: (agentId: string) => void;
+  onSelectAgent: (agentId: string, tabId?: string) => void;
   onOpenRoutine?: ((routine: { routineId: string; name: string }) => void) | undefined;
+  openRoutineThread?: ((routineId: string) => (() => void) | undefined) | undefined;
   onToggle?: (() => void) | undefined;
 }) {
   const { t, format } = useText();
@@ -387,6 +396,10 @@ function RoutineRunGroupMarker(props: {
             <time class="chat-action-marker-time chat-action-run-group-time" datetime={props.group.timestamp}>
               {timeRange()}
             </time>
+            <RoutineThreadLink
+              routineName={props.group.routineName}
+              open={props.openRoutineThread?.(props.group.routineId)}
+            />
             <Button
               variant="ghost"
               size="icon-xs"
@@ -520,6 +533,14 @@ function SingleChatActionMarker(
           <time class="chat-action-marker-time" datetime={props.marker.timestamp}>
             {formatMarkerTime(props.marker.timestamp, t, format)}
           </time>
+          <Show when={props.marker.kind === "routine-run" && props.marker}>
+            {(marker) => (
+              <RoutineThreadLink
+                routineName={marker().routineName}
+                open={props.openRoutineThread?.(marker().routineId)}
+              />
+            )}
+          </Show>
           <Show when={messagesRun()}>
             {(run) => (
               <Button
@@ -725,9 +746,13 @@ function HostedSiteTarget(props: {
 function AgentTarget(props: {
   marker: Extract<ChatActionMarkerModel, { kind: "agent-message" }>;
   agents: AgentProfile[];
-  onSelectAgent: (agentId: string) => void;
+  onSelectAgent: (agentId: string, tabId?: string) => void;
 }) {
   const { t } = useText();
+  // A link opens a conversation of the message, not the thread tab the agent showed last: the side
+  // thread that sent it, or else the agent's own chat.
+  const openSource = (agentId: string) => props.onSelectAgent(agentId, props.marker.senderTaskId ?? MAIN_THREAD_ID);
+  const openRecipient = (agentId: string) => props.onSelectAgent(agentId, MAIN_THREAD_ID);
   const source = () => props.agents.find((agent) => agent.id === props.marker.sourceAgentId);
   const recipients = () => props.marker.targetDeliveries;
   const singleRecipient = () => {
@@ -737,18 +762,12 @@ function AgentTarget(props: {
   return (
     <Show
       when={props.marker.direction === "outgoing"}
-      fallback={
-        <AgentButton agent={source()} fallbackId={props.marker.sourceAgentId} onSelectAgent={props.onSelectAgent} />
-      }
+      fallback={<AgentButton agent={source()} fallbackId={props.marker.sourceAgentId} onSelectAgent={openSource} />}
     >
       <Show
         when={recipients().length > 1}
         fallback={
-          <AgentButton
-            agent={singleRecipient()}
-            fallbackId={recipients()[0]?.agentId}
-            onSelectAgent={props.onSelectAgent}
-          />
+          <AgentButton agent={singleRecipient()} fallbackId={recipients()[0]?.agentId} onSelectAgent={openRecipient} />
         }
       >
         <DropdownMenu.Root placement="bottom" gutter={8} modal={false}>
@@ -778,7 +797,7 @@ function AgentTarget(props: {
                   <DropdownMenu.Item
                     class="chat-action-agent-menu-item"
                     disabled={!agent()}
-                    onSelect={() => props.onSelectAgent(delivery.agentId)}
+                    onSelect={() => openRecipient(delivery.agentId)}
                   >
                     <AgentAvatar agent={agent()} class="chat-action-agent-avatar" />
                     <span class="chat-action-agent-menu-name">
@@ -824,6 +843,27 @@ function AgentButton(props: {
         >
           <AgentAvatar agent={agent()} class="chat-action-agent-avatar" />
           <span>{agent().name}</span>
+        </Button>
+      )}
+    </Show>
+  );
+}
+
+/** Opens the side thread where the routine runs, with the run's answer and work. */
+function RoutineThreadLink(props: { routineName: string; open: (() => void) | undefined }) {
+  const { t } = useText();
+  return (
+    <Show when={props.open}>
+      {(open) => (
+        <Button
+          variant="ghost"
+          size="xs"
+          class="chat-action-routine-thread"
+          type="button"
+          aria-label={t("chat.marker.openRoutineThreadOf", { name: props.routineName })}
+          onClick={() => open()()}
+        >
+          {t("chat.marker.openRoutineThread")}
         </Button>
       )}
     </Show>
@@ -973,11 +1013,15 @@ function markerLabel(
 }
 
 function agentTargetStyle(agent: AgentProfile | undefined): string | undefined {
-  return agent ? `--chat-action-agent-color: ${avatarHeadColor(agent.avatarSeed, agent.avatarHue)}` : undefined;
+  return agent
+    ? `--chat-action-agent-color: ${avatarHeadColor(agent.avatarSeed, agent.avatarHue, agent.avatarColor ?? null)}`
+    : undefined;
 }
 
 function agentTargetsStyle(agents: Array<AgentProfile | undefined>): string | undefined {
-  const colors = agents.flatMap((agent) => (agent ? [avatarHeadColor(agent.avatarSeed, agent.avatarHue)] : []));
+  const colors = agents.flatMap((agent) =>
+    agent ? [avatarHeadColor(agent.avatarSeed, agent.avatarHue, agent.avatarColor ?? null)] : [],
+  );
   const mixedColor = colors.reduce<string | undefined>((mix, color, index) => {
     if (!mix) return color;
     const previousColorsWeight = Math.round((index / (index + 1)) * 10_000) / 100;

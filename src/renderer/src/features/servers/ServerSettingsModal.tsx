@@ -22,16 +22,18 @@ import {
   Blocks,
   Button,
   CalendarClock,
-  ChevronRight,
   Download,
   Globe2,
   HardDrive,
   History,
+  ItemGroup,
   KeyRound,
   Monitor,
   RefreshCw,
   Settings,
+  SettingsSection,
   ShieldCheck,
+  Smile,
   Sparkles,
   Tabs,
   Text,
@@ -55,6 +57,7 @@ import { actionToast } from "../../action-toast";
 import { type ServerBrowserProfilesOptions, ServerBrowserProfilesPanel } from "../browser/ServerBrowserProfilesPanel";
 import { type ServerStorageOptions, ServerStoragePanel } from "../files/ServerStoragePanel";
 import { type HostProviderSettings, HostProviderSettingsPanel } from "../settings/ProviderSettingsSection";
+import type { HostDefaultProviderOptions, HostDefaultProviderSource } from "../settings/provider-host-default";
 import type { HostModelVisibilityOptions, ProviderModelVisibilitySource } from "../settings/provider-model-visibility";
 import type { HostPromptCacheTtlOptions, ProviderPromptCacheSource } from "../settings/provider-prompt-cache";
 import { type ServerVaultOptions, ServerVaultPanel } from "../vault/ServerVaultPanel";
@@ -68,12 +71,13 @@ import { type McpPanelDetail, type McpPanelSignIn, ServerMcpPanel } from "./Serv
 import { createServerMembersSection } from "./ServerMembersSection";
 import type { ServerMemoryLimitOptions } from "./ServerMemoryLimitSetting";
 import type { ServerMemoryReviewOptions } from "./ServerMemoryReviewSetting";
+import { type ServerPersonalityOptions, ServerPersonalitySetting } from "./ServerPersonalitySetting";
 import { createServerRolesSection, type ServerAgentAccessOptions } from "./ServerRolesSection";
 import { type ServerRoutineFeedOptions, ServerRoutineFeedPanel } from "./ServerRoutineFeedPanel";
 import type { ServerTimezoneOptions } from "./ServerTimezoneSetting";
 import { type ServerTransferOptions, ServerTransferPanel } from "./ServerTransferPanel";
 import { type ServerUpdateOptions, ServerUpdatePanel } from "./ServerUpdatePanel";
-import { serverCanAdminister, serverRoleCanAdminister } from "./server-capabilities";
+import { serverCanAdminister, serverCanManageMcp, serverRoleCanAdminister } from "./server-capabilities";
 import type { ServerSettingsSectionHost } from "./server-settings-section";
 
 export interface ServerSettingsModalProps {
@@ -104,6 +108,11 @@ export interface ServerSettingsModalProps {
   license?: Pick<LicenseCalls, "getState" | "setUsers" | "changePlan"> | undefined;
   /** Company sign-in for the owner of a published server. Absent where the app cannot manage it. */
   companySignIn?: CompanySignInCalls | undefined;
+  /**
+   * Opens the desktop app download where `companySignIn` is absent. The owner then sees that setup
+   * needs the desktop app, instead of no section.
+   */
+  onDownloadDesktopApp?: (() => void) | undefined;
   /** Opens the contact page when a full license already has the most users that the app sells. */
   onContactUs?: () => void;
   onUpdateMember: (input: UpdateTeamMemberInput) => Promise<void>;
@@ -195,6 +204,11 @@ export interface ServerSettingsModalProps {
    */
   hostTimezone?: ServerTimezoneOptions | undefined;
   /**
+   * The Personality section shows only when a caller supplies this, and only for the local server or
+   * a remote host with `host-personality-v1` that this member administers.
+   */
+  hostPersonality?: ServerPersonalityOptions | undefined;
+  /**
    * General shows how many memories each agent keeps only when a caller supplies this, and only for
    * the local server or a remote host with `agent-memory-limit-v1` that this member administers.
    */
@@ -211,10 +225,21 @@ export interface ServerSettingsModalProps {
    */
   hostPromptCacheTtl?: HostPromptCacheTtlOptions | undefined;
   /**
+   * The Claude provider page of the local server shows "Use my Claude Code setup" only when the
+   * desktop app sets this. A joined server and the web client have no route for it.
+   */
+  claudeUserSetup?: boolean | undefined;
+  /**
    * Each provider page shows its Models section only when a caller supplies this, and only for the
    * local server or a remote host with `model-visibility-v1` that this member administers.
    */
   hostModelVisibility?: HostModelVisibilityOptions | undefined;
+  /**
+   * The Providers section of a remote host with `provider-default-v1` that this member administers
+   * shows the host's Default provider only when a caller supplies this. This computer's comes with
+   * `providers`.
+   */
+  hostDefaultProvider?: HostDefaultProviderOptions | undefined;
   /**
    * The Roles section appears only when a caller supplies this, and only for the local server or a
    * remote host with `agent-access-v1` that this member administers.
@@ -255,6 +280,7 @@ export interface ServerHostedSitesOptions {
 
 export type ServerSettingsSection =
   | "general"
+  | "personality"
   | "vault"
   | "members"
   | "roles"
@@ -273,6 +299,7 @@ type Section = ServerSettingsSection;
 
 const sections = {
   general: { title: "server.settings.generalTitle", description: "server.settings.generalDescription" },
+  personality: { title: "server.settings.personalityTitle", description: "server.settings.personalityDescription" },
   vault: { title: "server.settings.vaultTitle", description: "server.settings.vaultDescription" },
   members: { title: "server.settings.membersTitle", description: "server.settings.membersDescription" },
   roles: { title: "server.settings.rolesTitle", description: "server.settings.rolesDescription" },
@@ -316,13 +343,16 @@ export function ServerSettingsModal(props: ServerSettingsModalProps) {
   let syncedServerId = "";
 
   const local = () => props.server.kind === "local";
-  const remoteDesktopSection = () => props.remoteDesktopSupported !== false && props.platform === "darwin";
+  // The client's remote desktop setup is for macOS. A local server shows the section on every platform,
+  // because its owner chooses there who can control the computer.
+  const remoteDesktopSection = () => props.remoteDesktopSupported !== false && (props.platform === "darwin" || local());
   const configured = () => (local() ? Boolean(props.hostStatus?.configured) : true);
   /**
    * The role check without `configured()`. MCP servers belong to this machine and are spawned
    * by the agents on it, so they are manageable before the user publishes a Team API host at all.
+   * A member of a joined server with `mcp-member-access-v1` manages them too.
    */
-  const canManageMcp = () => serverRoleCanAdminister(props.server);
+  const canManageMcp = () => serverRoleCanAdminister(props.server) || serverCanManageMcp(props.server);
   const actionsAvailable = () => local() || props.server.state === "online";
   function promptCacheSource(): ProviderPromptCacheSource | undefined {
     const options = props.hostPromptCacheTtl;
@@ -333,6 +363,17 @@ export function ServerSettingsModal(props: ServerSettingsModalProps) {
     const options = props.hostModelVisibility;
     if (!options || !actionsAvailable() || !serverCanAdminister(props.server, "model-visibility-v1")) return undefined;
     return { ...options, serverId: props.server.id };
+  }
+  function hostDefaultProviderSource(): HostDefaultProviderSource | undefined {
+    const options = props.hostDefaultProvider;
+    if (!options || local() || !actionsAvailable() || !serverCanAdminister(props.server, "provider-default-v1"))
+      return undefined;
+    return { ...options, serverId: props.server.id };
+  }
+  function personalityOptions(): ServerPersonalityOptions | undefined {
+    const options = props.hostPersonality;
+    if (!options || !actionsAvailable() || !serverCanAdminister(props.server, "host-personality-v1")) return undefined;
+    return options;
   }
   const availableInitialSection = (): Section | null =>
     props.initialSection === "updates" && !props.hostUpdate ? null : (props.initialSection ?? null);
@@ -387,6 +428,7 @@ export function ServerSettingsModal(props: ServerSettingsModalProps) {
   const companySignIn = createServerCompanySignInSection(
     host,
     () => props.companySignIn,
+    () => props.onDownloadDesktopApp,
     () => props.open && section() === "members",
   );
   const hostedSites = createSettingsHostedSitesStore(
@@ -511,6 +553,7 @@ export function ServerSettingsModal(props: ServerSettingsModalProps) {
     onChange(value: string) {
       if (
         value === "general" ||
+        value === "personality" ||
         value === "vault" ||
         value === "members" ||
         value === "roles" ||
@@ -536,19 +579,8 @@ export function ServerSettingsModal(props: ServerSettingsModalProps) {
         class="server-settings-modal-shell"
         page={props.page}
         open={props.open}
-        title={
-          <Show when={crumbDetail()} fallback={t(sections[section()].title)}>
-            {(detail) => (
-              <span class="settings-modal-crumbs">
-                <Button type="button" variant="ghost" class="settings-modal-crumb-parent" onClick={detail().back}>
-                  {t(sections[section()].title)}
-                </Button>
-                <ChevronRight class="settings-modal-crumb-separator" aria-hidden="true" />
-                <span class="settings-modal-crumb-current">{detail().title}</span>
-              </span>
-            )}
-          </Show>
-        }
+        title={t(sections[section()].title)}
+        crumb={crumbDetail()}
         description={t(sections[section()].description)}
         contentKey={`${props.server.id}:${section()}`}
         restoreFocusTarget={props.restoreFocusTarget}
@@ -674,6 +706,12 @@ export function ServerSettingsModal(props: ServerSettingsModalProps) {
               <Settings aria-hidden="true" />
               <span>{t(sections.general.title)}</span>
             </Tabs.Trigger>
+            <Show when={personalityOptions()}>
+              <Tabs.Trigger class="settings-modal-nav-item" value="personality">
+                <Smile aria-hidden="true" />
+                <span>{t(sections.personality.title)}</span>
+              </Tabs.Trigger>
+            </Show>
             <Show when={props.vault}>
               <Tabs.Trigger class="settings-modal-nav-item" value="vault">
                 <KeyRound aria-hidden="true" />
@@ -762,6 +800,27 @@ export function ServerSettingsModal(props: ServerSettingsModalProps) {
         <Tabs.Content value="general" class="settings-modal-tab-panel server-settings-panel" data-tab="general">
           <general.Panel />
         </Tabs.Content>
+        <Show when={personalityOptions()}>
+          {(options) => (
+            <Tabs.Content
+              value="personality"
+              class="settings-modal-tab-panel server-settings-panel"
+              data-tab="personality"
+            >
+              <SettingsSection title={t("server.settings.agents")}>
+                <ItemGroup class="settings-modal-card">
+                  <ServerPersonalitySetting
+                    {...options()}
+                    serverId={props.server.id}
+                    disabled={Boolean(busy())}
+                    menuMount={modalElement()}
+                    run={run}
+                  />
+                </ItemGroup>
+              </SettingsSection>
+            </Tabs.Content>
+          )}
+        </Show>
         <Show when={props.vault}>
           {(vault) => (
             <Tabs.Content value="vault" class="settings-modal-tab-panel server-settings-panel" data-tab="vault">
@@ -785,7 +844,12 @@ export function ServerSettingsModal(props: ServerSettingsModalProps) {
         </Show>
         <Show when={remoteDesktopSection()}>
           <Tabs.Content value="desktop" class="settings-modal-tab-panel server-settings-panel" data-tab="desktop">
-            <ServerDesktopPanel server={props.server} platform={props.platform} hostStatus={props.hostStatus} />
+            <ServerDesktopPanel
+              server={props.server}
+              platform={props.platform}
+              hostStatus={props.hostStatus}
+              menuMount={modalElement()}
+            />
           </Tabs.Content>
         </Show>
         <Show when={props.mcpServers}>
@@ -865,7 +929,9 @@ export function ServerSettingsModal(props: ServerSettingsModalProps) {
                   selectMount={modalElement()}
                   onDetailChange={setProviderDetail}
                   promptCache={promptCacheSource()}
+                  claudeUserSetup={props.claudeUserSetup === true && local()}
                   modelVisibility={modelVisibilitySource()}
+                  hostDefaultProvider={hostDefaultProviderSource()}
                 />
               )}
             </Show>
